@@ -76,23 +76,34 @@ export default function BookingPage() {
 
   // Calculate total price whenever selected slots change
   useEffect(() => {
-    // Apply dynamic pricing:
-    // - First slot: full price
-    // - Additional slots: 10% discount per slot
     if (selectedSlots.length === 0) {
       setTotalPrice(0)
-    } else {
-      const basePrice = selectedTurf.price
-      let total = basePrice // First slot at full price
-
-      // Apply discount for additional slots
-      for (let i = 1; i < selectedSlots.length; i++) {
-        const discountFactor = Math.max(0.7, 1 - i * 0.1) // Maximum 30% discount
-        total += basePrice * discountFactor
-      }
-
-      setTotalPrice(Math.round(total))
+      return
     }
+
+    // Calculate the number of 30-minute periods based on start and end times
+    const timeSlots = generateTimeSlots()
+
+    // Find the indices of the first and last selected slots
+    const firstSlotIndex = timeSlots.indexOf(selectedSlots[0])
+    const lastSlotIndex = timeSlots.indexOf(selectedSlots[selectedSlots.length - 1])
+
+    // Calculate the number of 30-minute periods (number of slots - 1)
+    const numberOfPeriods = Math.max(1, lastSlotIndex - firstSlotIndex)
+
+    // Apply dynamic pricing:
+    // - First period: full price
+    // - Additional periods: 10% discount per period
+    const basePrice = selectedTurf.price
+    let total = basePrice // First period at full price
+
+    // Apply discount for additional periods
+    for (let i = 1; i < numberOfPeriods; i++) {
+      const discountFactor = Math.max(0.7, 1 - i * 0.1) // Maximum 30% discount
+      total += basePrice * discountFactor
+    }
+
+    setTotalPrice(Math.round(total))
   }, [selectedSlots, selectedTurf.price])
 
   // Generate time slots from 6 AM to 10 PM in 30-minute increments
@@ -171,6 +182,16 @@ export default function BookingPage() {
   const morningSlots = timeSlots.filter((slot) => slot.includes("AM"))
   const afternoonSlots = timeSlots.filter((slot) => slot.includes("PM") && Number.parseInt(slot.split(":")[0]) < 5)
   const eveningSlots = timeSlots.filter((slot) => slot.includes("PM") && Number.parseInt(slot.split(":")[0]) >= 5)
+
+  // Calculate the number of 30-minute periods
+  const calculateNumberOfPeriods = () => {
+    if (selectedSlots.length <= 1) return selectedSlots.length
+
+    const firstSlotIndex = timeSlots.indexOf(selectedSlots[0])
+    const lastSlotIndex = timeSlots.indexOf(selectedSlots[selectedSlots.length - 1])
+
+    return lastSlotIndex - firstSlotIndex
+  }
 
   return (
     <main className="container mx-auto px-6 py-12">
@@ -280,8 +301,8 @@ export default function BookingPage() {
                     ))}
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {selectedSlots.length} x 30 minute sessions
-                    {selectedSlots.length > 1 && " (with multi-slot discount)"}
+                    {calculateNumberOfPeriods()} x 30 minute periods
+                    {calculateNumberOfPeriods() > 1 && " (with multi-slot discount)"}
                   </p>
                 </div>
               ) : (
@@ -417,7 +438,7 @@ export default function BookingPage() {
                     <Clock className="h-5 w-5" />
                     <span>
                       {selectedSlots.length > 0
-                        ? `${selectedSlots[0]} - ${selectedSlots[selectedSlots.length - 1]} (${selectedSlots.length} slots)`
+                        ? `${selectedSlots[0]} - ${selectedSlots[selectedSlots.length - 1]} (${calculateNumberOfPeriods()} periods)`
                         : "Select time slot(s)"}
                     </span>
                   </div>
@@ -426,7 +447,7 @@ export default function BookingPage() {
                   <p className="text-base text-muted-foreground">Total Amount</p>
                   <p className="text-3xl font-bold text-primary">₹{totalPrice}</p>
                   <p className="text-sm text-muted-foreground">
-                    {selectedSlots.length > 0 ? `${selectedSlots.length} x 30 minutes` : "No slots selected"}
+                    {selectedSlots.length > 0 ? `${calculateNumberOfPeriods()} x 30 minutes` : "No slots selected"}
                   </p>
                 </div>
               </div>
