@@ -2,7 +2,7 @@
 
 import { useSearchParams, useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
-import { CalendarIcon, Clock, ArrowRight, ArrowLeft, MapPin } from "lucide-react"
+import { CalendarIcon, Clock, ArrowRight, ArrowLeft, MapPin, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -106,17 +106,33 @@ export default function BookingPage() {
     setTotalPrice(Math.round(total))
   }, [selectedSlots, selectedTurf.price])
 
-  // Generate time slots from 6 AM to 10 PM in 30-minute increments
+  // Generate time slots from 6 AM to 10 PM in 30-minute increments with range format
   const generateTimeSlots = () => {
     const slots = []
     for (let hour = 6; hour < 22; hour++) {
       const hourFormatted = hour % 12 === 0 ? 12 : hour % 12
       const ampm = hour < 12 ? "AM" : "PM"
 
+      // First slot of the hour
       slots.push(`${hourFormatted}:00 ${ampm}`)
+
+      // Second slot of the hour
       slots.push(`${hourFormatted}:30 ${ampm}`)
     }
     return slots
+  }
+
+  // Format a time slot to show the range (e.g., "6:00 AM - 6:30 AM")
+  const formatTimeSlotRange = (slot: string) => {
+    const timeSlots = generateTimeSlots()
+    const slotIndex = timeSlots.indexOf(slot)
+
+    if (slotIndex === -1 || slotIndex === timeSlots.length - 1) {
+      return slot
+    }
+
+    const nextSlot = timeSlots[slotIndex + 1]
+    return `${slot} - ${nextSlot}`
   }
 
   const timeSlots = generateTimeSlots()
@@ -329,7 +345,7 @@ export default function BookingPage() {
             <div className="space-y-8">
               <div>
                 <h3 className="font-medium mb-4 text-lg text-muted-foreground">Morning</h3>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {morningSlots.map((slot) => {
                     const isBooked = isSlotBooked(slot)
                     const isSelected = selectedSlots.includes(slot)
@@ -338,17 +354,25 @@ export default function BookingPage() {
                         key={slot}
                         variant={isSelected ? "default" : "outline"}
                         className={cn(
-                          "h-14 text-base rounded-xl",
-                          isBooked && "opacity-50 cursor-not-allowed",
+                          "h-auto py-3 text-sm rounded-xl relative",
+                          isBooked && "bg-secondary border-border text-foreground hover:bg-secondary/80",
                           isSelected && "bg-primary text-white border-primary",
                           !isSelected &&
                             !isBooked &&
-                            "hover:border-primary hover:text-primary bg-secondary border-border",
+                            "hover:border-primary hover:text-foreground bg-secondary border-border",
                         )}
                         disabled={isBooked}
                         onClick={() => toggleSlot(slot)}
                       >
-                        {slot}
+                        {formatTimeSlotRange(slot)}
+                        {isBooked && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-secondary/90 rounded-xl">
+                            <div className="flex items-center text-foreground font-medium">
+                              <XCircle className="h-4 w-4 mr-1.5 text-foreground" />
+                              Booked
+                            </div>
+                          </div>
+                        )}
                       </Button>
                     )
                   })}
@@ -357,7 +381,7 @@ export default function BookingPage() {
 
               <div>
                 <h3 className="font-medium mb-4 text-lg text-muted-foreground">Afternoon</h3>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {afternoonSlots.map((slot) => {
                     const isBooked = isSlotBooked(slot)
                     const isSelected = selectedSlots.includes(slot)
@@ -366,17 +390,25 @@ export default function BookingPage() {
                         key={slot}
                         variant={isSelected ? "default" : "outline"}
                         className={cn(
-                          "h-14 text-base rounded-xl",
-                          isBooked && "opacity-50 cursor-not-allowed",
+                          "h-auto py-3 text-sm rounded-xl relative",
+                          isBooked && "bg-secondary border-border text-foreground hover:bg-secondary/80",
                           isSelected && "bg-primary text-white border-primary",
                           !isSelected &&
                             !isBooked &&
-                            "hover:border-primary hover:text-primary bg-secondary border-border",
+                            "hover:border-primary hover:text-foreground bg-secondary border-border",
                         )}
                         disabled={isBooked}
                         onClick={() => toggleSlot(slot)}
                       >
-                        {slot}
+                        {formatTimeSlotRange(slot)}
+                        {isBooked && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-secondary/90 rounded-xl">
+                            <div className="flex items-center text-foreground font-medium">
+                              <XCircle className="h-4 w-4 mr-1.5 text-foreground" />
+                              Booked
+                            </div>
+                          </div>
+                        )}
                       </Button>
                     )
                   })}
@@ -385,7 +417,7 @@ export default function BookingPage() {
 
               <div>
                 <h3 className="font-medium mb-4 text-lg text-muted-foreground">Evening</h3>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {eveningSlots.map((slot) => {
                     const isBooked = isSlotBooked(slot)
                     const isSelected = selectedSlots.includes(slot)
@@ -394,17 +426,25 @@ export default function BookingPage() {
                         key={slot}
                         variant={isSelected ? "default" : "outline"}
                         className={cn(
-                          "h-14 text-base rounded-xl",
-                          isBooked && "opacity-50 cursor-not-allowed",
+                          "h-auto py-3 text-sm rounded-xl relative",
+                          isBooked && "bg-secondary border-border text-foreground hover:bg-secondary/80",
                           isSelected && "bg-primary text-white border-primary",
                           !isSelected &&
                             !isBooked &&
-                            "hover:border-primary hover:text-primary bg-secondary border-border",
+                            "hover:border-primary hover:text-foreground bg-secondary border-border",
                         )}
                         disabled={isBooked}
                         onClick={() => toggleSlot(slot)}
                       >
-                        {slot}
+                        {formatTimeSlotRange(slot)}
+                        {isBooked && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-secondary/90 rounded-xl">
+                            <div className="flex items-center text-foreground font-medium">
+                              <XCircle className="h-4 w-4 mr-1.5 text-foreground" />
+                              Booked
+                            </div>
+                          </div>
+                        )}
                       </Button>
                     )
                   })}

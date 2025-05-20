@@ -1,15 +1,13 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useRef } from "react"
 import Link from "next/link"
-import { ArrowRight, Calendar, Clock, MapPin, ChevronRight, Grid, List, Search } from "lucide-react"
+import { ArrowRight, Calendar, Clock, MapPin, ChevronRight, ChevronLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 
 export default function Home() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const [viewMode, setViewMode] = useState<"scroll" | "grid">("scroll")
 
   const scrollRight = () => {
     if (scrollContainerRef.current) {
@@ -20,8 +18,13 @@ export default function Home() {
     }
   }
 
-  const toggleViewMode = () => {
-    setViewMode(viewMode === "scroll" ? "grid" : "scroll")
+  const scrollLeft = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({
+        left: -340,
+        behavior: "smooth",
+      })
+    }
   }
 
   const sports = [
@@ -98,27 +101,12 @@ export default function Home() {
     </Link>
   )
 
-  const SportGridCard = ({ sport }: { sport: (typeof sports)[0] }) => (
-    <Link href={`/turfs?sport=${sport.id}`} className="block h-full">
-      <div className="relative overflow-hidden rounded-3xl aspect-[4/3] group">
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10"></div>
-        <img
-          src={sport.image || "/placeholder.svg"}
-          alt={sport.name}
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-        />
-        <div className="absolute bottom-0 left-0 right-0 p-6 z-20">
-          <h3 className="text-3xl font-bold text-white">{sport.name}</h3>
-        </div>
-      </div>
-    </Link>
-  )
-
   return (
     <main className="container mx-auto px-6 py-12">
       <section className="mb-16 text-center max-w-3xl mx-auto">
-        <h1 className="text-5xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-primary to-mint-light">
-          Khelconnect
+        <h1 className="text-5xl mb-6 bg-clip-text text-transparent bg-gradient-to-r from-primary to-mint-light font-qualy">
+          <span className="font-bold">Khel</span>
+          <span className="font-light">Connect</span>
         </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
           Book your favorite sports turf in Kolkata for football, cricket, or pickleball in 30-minute slots.
@@ -128,76 +116,41 @@ export default function Home() {
       <section className="mb-20">
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-3xl font-semibold">Choose Your Sport</h2>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleViewMode}
-              className="flex items-center gap-2 rounded-full"
+              variant="ghost"
+              size="icon"
+              className="text-primary hover:text-foreground bg-secondary rounded-full h-10 w-10 transition-colors group"
+              onClick={scrollLeft}
+              aria-label="Scroll left"
             >
-              {viewMode === "scroll" ? (
-                <>
-                  <Grid className="h-4 w-4" />
-                  <span>View All</span>
-                </>
-              ) : (
-                <>
-                  <List className="h-4 w-4" />
-                  <span>Scroll View</span>
-                </>
-              )}
+              <ChevronLeft className="h-6 w-6 group-hover:text-foreground transition-colors" />
             </Button>
-            {viewMode === "scroll" && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-primary hover:text-foreground bg-secondary rounded-full h-10 w-10 transition-colors group"
-                onClick={scrollRight}
-                aria-label="Scroll right"
-              >
-                <ChevronRight className="h-6 w-6 group-hover:text-foreground transition-colors" />
-              </Button>
-            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-primary hover:text-foreground bg-secondary rounded-full h-10 w-10 transition-colors group"
+              onClick={scrollRight}
+              aria-label="Scroll right"
+            >
+              <ChevronRight className="h-6 w-6 group-hover:text-foreground transition-colors" />
+            </Button>
           </div>
         </div>
 
-        {viewMode === "scroll" ? (
-          // Horizontal scrollable cards
-          <div className="relative -mx-6 px-6">
-            <div
-              ref={scrollContainerRef}
-              className="flex overflow-x-auto pb-6 snap-x snap-mandatory scrollbar-hide -mx-4"
-            >
-              {sports.map((sport) => (
-                <div key={sport.id} className="px-4 min-w-[280px] md:min-w-[320px] snap-start">
-                  <SportCard sport={sport} />
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          // Grid view of all sports - Apple Music style
-          <div className="space-y-8">
-            <div className="relative">
-              <div className="relative rounded-full bg-secondary flex items-center px-4 max-w-3xl mx-auto">
-                <Search className="h-5 w-5 text-muted-foreground absolute left-4" />
-                <Input
-                  type="text"
-                  placeholder="Search sports, turfs, and more"
-                  className="border-0 bg-transparent pl-10 py-6 focus-visible:ring-0 focus-visible:ring-offset-0"
-                />
+        {/* Horizontal scrollable cards */}
+        <div className="relative -mx-6 px-6">
+          <div
+            ref={scrollContainerRef}
+            className="flex overflow-x-auto pb-6 snap-x snap-mandatory scrollbar-hide -mx-4"
+          >
+            {sports.map((sport) => (
+              <div key={sport.id} className="px-4 min-w-[280px] md:min-w-[320px] snap-start">
+                <SportCard sport={sport} />
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sports.map((sport) => (
-                <div key={sport.id}>
-                  <SportGridCard sport={sport} />
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
-        )}
+        </div>
       </section>
 
       <section className="text-center mb-20 max-w-5xl mx-auto bg-card p-10 rounded-3xl border border-border">

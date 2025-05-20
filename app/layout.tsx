@@ -123,10 +123,10 @@ export default function RootLayout({
                   <div>
                     <h3 className="font-bold mb-5 text-lg">Contact</h3>
                     <address className="not-italic text-muted-foreground">
-                      <p>123 Park Street</p>
-                      <p>Kolkata, West Bengal 700001</p>
-                      <p className="mt-3">Email: info@khelconnect.com</p>
-                      <p>Phone: +91 98765 43210</p>
+                      <p className="mt-3">Email: khelconnectindia@gmail.com</p>
+                      <p>Phone: +91 9874014180</p>
+                      <br />
+                      <p>Kolkata, West Bengal, India</p>
                     </address>
                   </div>
                 </div>
