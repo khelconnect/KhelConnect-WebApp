@@ -79,7 +79,7 @@ export default function Home() {
   ]
 
   const SportCard = ({ sport }: { sport: (typeof sports)[0] }) => (
-    <Link href={`/turfs?sports=${sport.id}`} className="block h-full">
+    <Link href={`/turfs?sport=${sport.id}`} className="block h-full">
       <Card className="overflow-hidden border-0 shadow-lg rounded-3xl h-[420px] relative group">
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent z-10"></div>
         <img
@@ -186,7 +186,7 @@ export default function Home() {
             <h2 className="text-3xl font-bold mb-4">Ready to Play?</h2>
             <p className="mb-6 text-lg">Book your turf now and enjoy your favorite sport in Kolkata.</p>
             <Button variant="secondary" size="lg" asChild className="text-lg px-8 py-6 h-auto rounded-full">
-              <Link href="/turfs?sports=football">
+              <Link href="/turfs?sport=football">
                 Book Now
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
