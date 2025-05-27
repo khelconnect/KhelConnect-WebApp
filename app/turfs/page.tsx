@@ -1,59 +1,55 @@
-"use client"
+"use client";
+
+export const dynamic = "force-dynamic";
 
 import { useSearchParams, useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
+import { supabase } from "@/lib/supabaseClient"
 import { MapPin, Star, ArrowRight, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 
+interface Turf {
+  id: string
+  name: string
+  location: string
+  image: string
+  price: number
+  rating: number
+  amenities: string[]
+  distance: string
+  sports: string[]
+}
+
 export default function TurfsPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const sport = searchParams.get("sport") || "football"
+  const [turfs, setTurfs] = useState<Turf[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const turfs = [
-    {
-      id: "salt-lake",
-      name: "Salt Lake Stadium Turf",
-      location: "Salt Lake, Sector V",
-      image: "/placeholder.svg?height=200&width=300",
-      price: 800,
-      rating: 4.8,
-      amenities: ["Floodlights", "Changing Rooms", "Parking"],
-      distance: "4.2 km",
-    },
-    {
-      id: "new-town",
-      name: "New Town Sports Arena",
-      location: "New Town, Action Area II",
-      image: "/placeholder.svg?height=200&width=300",
-      price: 750,
-      rating: 4.6,
-      amenities: ["Floodlights", "Refreshments", "Seating"],
-      distance: "6.5 km",
-    },
-    {
-      id: "park-street",
-      name: "Park Street Play Zone",
-      location: "Park Street Area",
-      image: "/placeholder.svg?height=200&width=300",
-      price: 900,
-      rating: 4.9,
-      amenities: ["Premium Surface", "Changing Rooms", "Coaching Available"],
-      distance: "3.8 km",
-    },
-    {
-      id: "howrah",
-      name: "Howrah Sports Complex",
-      location: "Howrah Bridge Area",
-      image: "/placeholder.svg?height=200&width=300",
-      price: 700,
-      rating: 4.5,
-      amenities: ["Floodlights", "Equipment Rental", "Parking"],
-      distance: "7.1 km",
-    },
-  ]
+  const fetchTurfs = async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from("turfs")
+      .select("*")
+      .contains("sports", [sport])
+
+    if (error) {
+      console.error("Error fetching turfs:", error)
+      setTurfs([])
+    } else {
+      setTurfs(data || [])
+    }
+
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    fetchTurfs()
+  }, [sport])
 
   const sportNames = {
     football: "Football",
@@ -115,8 +111,14 @@ export default function TurfsPage() {
         </p>
       </div>
 
+      {loading ? (
+        <p className="text-center">Loading turfs...</p>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12 max-w-5xl mx-auto">
-        {turfs.map((turf) => (
+        {turfs.length === 0 ? (
+          <p className="text-center col-span-full">No turfs found for {sportNames[sport as keyof typeof sportNames]}.</p>
+        ) : (
+        turfs.map((turf) => (
           <Card
             key={turf.id}
             className="overflow-hidden hover:shadow-xl transition-all hover:border-primary cursor-pointer bg-card border-border rounded-3xl"
@@ -164,8 +166,9 @@ export default function TurfsPage() {
               </Button>
             </CardContent>
           </Card>
-        ))}
+        )))}
       </div>
+      )}
     </main>
   )
 }
