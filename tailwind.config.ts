@@ -20,7 +20,7 @@ const config = {
     },
     extend: {
       fontFamily: {
-      qualy: ['"Qualy Neue"', 'sans-serif'],
+      qualyneue: ['var(--font-qualyneue)'],
     },
       colors: {
         border: "hsl(var(--border))",

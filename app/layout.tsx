@@ -9,6 +9,24 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { ThemeProvider } from "@/components/theme-provider"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { ThemeScript } from "./theme-script"
+import localFont from "next/font/local"
+
+const qualyNeue = localFont({
+  src: [
+    {
+      path: '../public/fonts/qualy-neue-light.woff2',
+      weight: '300',
+      style: 'normal',
+    },
+    {
+      path: '../public/fonts/qualy-neue-bold.woff2',
+      weight: '700',
+      style: 'normal',
+    },
+  ],
+  variable: '--font-qualyneue', // optional, for CSS variables
+  display: 'swap',
+});
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -24,7 +42,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className={qualyNeue.variable}>
       <body className={`${inter.className} bg-background`}>
         <ThemeScript />
         <ThemeProvider defaultTheme="dark">
@@ -33,7 +51,8 @@ export default function RootLayout({
               <div className="container mx-auto px-6 py-5 flex justify-between items-center">
                 <Link href="/" className="font-bold text-xl flex items-center gap-3">
                   <span className="bg-primary text-primary-foreground p-1.5 rounded-full text-sm">KC</span>
-                  Khelconnect
+                  <p className="font-qualyneue"><span className="font-bold">Khel</span>
+                  <span className="font-light">Connect</span></p>
                 </Link>
 
                 {/* Desktop Navigation */}

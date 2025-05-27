@@ -1,10 +1,10 @@
 "use client"
-
 import { useRef } from "react"
 import Link from "next/link"
 import { ArrowRight, Calendar, Clock, MapPin, ChevronRight, ChevronLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+
 
 export default function Home() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -104,7 +104,7 @@ export default function Home() {
   return (
     <main className="container mx-auto px-6 py-12">
       <section className="mb-16 text-center max-w-3xl mx-auto">
-        <h1 className="text-5xl mb-6 bg-clip-text text-transparent bg-gradient-to-r from-primary to-mint-light font-qualy">
+        <h1 className="text-5xl mb-6 bg-clip-text text-transparent bg-gradient-to-r from-primary to-mint-light font-qualyneue">
           <span className="font-bold">Khel</span>
           <span className="font-light">Connect</span>
         </h1>
