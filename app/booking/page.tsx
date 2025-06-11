@@ -1,8 +1,10 @@
 "use client"
 
+import type React from "react"
+
 import { useSearchParams, useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
-import { CalendarIcon, Clock, ArrowRight, ArrowLeft, MapPin, XCircle } from "lucide-react"
+import { CalendarIcon, Clock, ArrowRight, ArrowLeft, MapPin, XCircle, User, Mail, Phone } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -10,6 +12,9 @@ import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import Link from "next/link"
 
 export default function BookingPage() {
@@ -21,6 +26,13 @@ export default function BookingPage() {
   const [date, setDate] = useState<Date | undefined>(new Date())
   const [selectedSlots, setSelectedSlots] = useState<string[]>([])
   const [totalPrice, setTotalPrice] = useState(0)
+  const [showPersonalDetailsModal, setShowPersonalDetailsModal] = useState(false)
+  const [personalDetails, setPersonalDetails] = useState({
+    name: "",
+    email: "",
+    phone: "",
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const turfs = {
     "salt-lake": {
@@ -170,8 +182,23 @@ export default function BookingPage() {
     })
   }
 
-  const handleBooking = () => {
-    if (selectedSlots.length === 0) return
+const handleConfirmBooking = () => {
+    if (selectedSlots.length === 0 || !date) return
+    setShowPersonalDetailsModal(true)
+  }
+
+  const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // Validate form
+    if (!personalDetails.name.trim() || !personalDetails.email.trim() || !personalDetails.phone.trim()) {
+      return
+    }
+
+    setIsSubmitting(true)
+
+    // Simulate API call delay
+    await new Promise((resolve) => setTimeout(resolve, 1000))
 
     // In a real app, you would make an API call to create the booking
     // For this demo, we'll just navigate to the confirmation page with the booking details
@@ -183,6 +210,9 @@ export default function BookingPage() {
       slots: selectedSlots.join(","),
       price: totalPrice,
       bookingId: Math.random().toString(36).substring(2, 10).toUpperCase(),
+      customerName: personalDetails.name,
+      customerEmail: personalDetails.email,
+      customerPhone: personalDetails.phone,
     }
 
     // Encode the booking details as URL parameters
@@ -191,7 +221,16 @@ export default function BookingPage() {
       params.append(key, value.toString())
     })
 
-    router.push(`/confirmation?${params.toString()}`)
+        setIsSubmitting(false)
+    setShowPersonalDetailsModal(false)
+    router.push(`/whatsapp-confirmation?${params.toString()}`)
+  }
+
+  const handlePersonalDetailsChange = (field: string, value: string) => {
+    setPersonalDetails((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
   }
 
   // Group time slots by morning, afternoon, evening
@@ -495,7 +534,7 @@ export default function BookingPage() {
                 className="w-full bg-primary hover:bg-mint-dark text-white rounded-full"
                 size="lg"
                 disabled={!date || selectedSlots.length === 0}
-                onClick={handleBooking}
+                onClick={handleConfirmBooking}
               >
                 Confirm Booking
                 <ArrowRight className="ml-2 h-5 w-5" />
@@ -504,6 +543,99 @@ export default function BookingPage() {
           </Card>
         </div>
       </div>
+            {/* Personal Details Modal */}
+      <Dialog open={showPersonalDetailsModal} onOpenChange={setShowPersonalDetailsModal}>
+        <DialogContent className="sm:max-w-md bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3 text-xl">
+              <User className="h-6 w-6 text-primary" />
+              Personal Details
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handlePersonalDetailsSubmit} className="space-y-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-sm font-medium">
+                  Full Name *
+                </Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={personalDetails.name}
+                    onChange={(e) => handlePersonalDetailsChange("name", e.target.value)}
+                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium">
+                  Email Address *
+                </Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="Enter your email address"
+                    value={personalDetails.email}
+                    onChange={(e) => handlePersonalDetailsChange("email", e.target.value)}
+                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="text-sm font-medium">
+                  Phone Number *
+                </Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="phone"
+                    type="tel"
+                    placeholder="Enter your phone number"
+                    value={personalDetails.phone}
+                    onChange={(e) => handlePersonalDetailsChange("phone", e.target.value)}
+                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowPersonalDetailsModal(false)}
+                className="flex-1 py-3 rounded-xl border-border"
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="flex-1 bg-primary hover:bg-mint-dark text-white py-3 rounded-xl"
+                disabled={
+                  isSubmitting ||
+                  !personalDetails.name.trim() ||
+                  !personalDetails.email.trim() ||
+                  !personalDetails.phone.trim()
+                }
+              >
+                {isSubmitting ? "Processing..." : "Complete Booking"}
+                {!isSubmitting && <ArrowRight className="ml-2 h-4 w-4" />}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }
