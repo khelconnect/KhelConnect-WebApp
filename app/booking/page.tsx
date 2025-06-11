@@ -1,14 +1,19 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import type React from "react"
+
+import { useSearchParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { format } from "date-fns";
-import { ArrowLeft, MapPin, Star } from "lucide-react";
+import { CalendarIcon, Clock, ArrowRight, ArrowLeft, MapPin, XCircle, User, Mail, Phone, Star } from "lucide-react"
 import Link from "next/link";
 
 interface Slot {
@@ -30,6 +35,7 @@ interface Turf {
 
 export default function BookingPage() {
   const searchParams = useSearchParams();
+  const router = useRouter()
   const turfId = searchParams.get("turf") || "";
   const sport = searchParams.get("sport") || "football";
 
@@ -38,6 +44,13 @@ export default function BookingPage() {
   const [loading, setLoading] = useState(false);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [turfInfo, setTurfInfo] = useState<Turf | null>(null);
+    const [showPersonalDetailsModal, setShowPersonalDetailsModal] = useState(false)
+  const [personalDetails, setPersonalDetails] = useState({
+    name: "",
+    email: "",
+    phone: "",
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
 
@@ -152,7 +165,7 @@ const handleConfirmBooking = async () => {
     return;
   }
 
-  alert("Booking successful!");
+  setShowPersonalDetailsModal(true)
   setSelectedSlots([]);
   fetchSlots();
 
@@ -169,9 +182,58 @@ const handleConfirmBooking = async () => {
       price: turfInfo?.price?.toString() || "",
     }).toString();
 
-    window.location.href = `/confirmation?${query}`;
+    // window.location.href = `/confirmation?${query}`;
   }
 };
+
+const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // Validate form
+    if (!personalDetails.name.trim() || !personalDetails.email.trim() || !personalDetails.phone.trim()) {
+      return
+    }
+
+    setIsSubmitting(true)
+
+    // Simulate API call delay
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+
+    // In a real app, you would make an API call to create the booking
+    // For this demo, we'll just navigate to the confirmation page with the booking details
+    const bookingDetails = {
+      sport,
+      turfId,
+      turfName: turfInfo?.name || "",
+      date: formattedDate || "",
+      slots: selectedSlots.join(","),
+      price: turfInfo?.price?.toString() || "",
+      bookingId: Math.random().toString(36).substring(2, 10).toUpperCase(),
+      customerName: personalDetails.name,
+      customerEmail: personalDetails.email,
+      customerPhone: personalDetails.phone,
+    }
+
+    // Encode the booking details as URL parameters
+    const params = new URLSearchParams()
+    Object.entries(bookingDetails).forEach(([key, value]) => {
+      params.append(key, value.toString())
+    })
+
+    setIsSubmitting(false)
+    setShowPersonalDetailsModal(false)
+    router.push(`/whatsapp-confirmation?${params.toString()}`)
+  }
+
+  const handlePersonalDetailsChange = (field: string, value: string) => {
+    setPersonalDetails((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+
+
 
 
   const groupedSlots: { [key: string]: Slot[] } = {
@@ -264,6 +326,101 @@ const handleConfirmBooking = async () => {
           </Button>
         </div>
       </div>
+
+      
+      {/* Personal Details Modal */}
+      <Dialog open={showPersonalDetailsModal} onOpenChange={setShowPersonalDetailsModal}>
+        <DialogContent className="sm:max-w-md bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3 text-xl">
+              <User className="h-6 w-6 text-primary" />
+              Personal Details
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handlePersonalDetailsSubmit} className="space-y-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-sm font-medium">
+                  Full Name *
+                </Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={personalDetails.name}
+                    onChange={(e) => handlePersonalDetailsChange("name", e.target.value)}
+                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium">
+                  Email Address *
+                </Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="Enter your email address"
+                    value={personalDetails.email}
+                    onChange={(e) => handlePersonalDetailsChange("email", e.target.value)}
+                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="text-sm font-medium">
+                  Phone Number *
+                </Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="phone"
+                    type="tel"
+                    placeholder="Enter your phone number"
+                    value={personalDetails.phone}
+                    onChange={(e) => handlePersonalDetailsChange("phone", e.target.value)}
+                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowPersonalDetailsModal(false)}
+                className="flex-1 py-3 rounded-xl border-border"
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="flex-1 bg-primary hover:bg-mint-dark text-white py-3 rounded-xl"
+                disabled={
+                  isSubmitting ||
+                  !personalDetails.name.trim() ||
+                  !personalDetails.email.trim() ||
+                  !personalDetails.phone.trim()
+                }
+              >
+                {isSubmitting ? "Processing..." : "Complete Booking"}
+                {!isSubmitting && <ArrowRight className="ml-2 h-4 w-4" />}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
