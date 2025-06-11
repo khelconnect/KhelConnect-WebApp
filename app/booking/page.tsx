@@ -1,641 +1,269 @@
-"use client"
+"use client";
 
-import type React from "react"
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { Calendar } from "@/components/ui/calendar";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { format } from "date-fns";
+import { ArrowLeft, MapPin, Star } from "lucide-react";
+import Link from "next/link";
 
-import { useSearchParams, useRouter } from "next/navigation"
-import { useState, useEffect } from "react"
-import { CalendarIcon, Clock, ArrowRight, ArrowLeft, MapPin, XCircle, User, Mail, Phone } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { cn } from "@/lib/utils"
-import { format } from "date-fns"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import Link from "next/link"
+interface Slot {
+  id: string;
+  start_time: string;
+  end_time: string;
+  period: string;
+  isBooked: boolean;
+}
+
+interface Turf {
+  id: string;
+  name: string;
+  image: string;
+  location: string;
+  rating: number;
+  price: number;
+}
 
 export default function BookingPage() {
-  const searchParams = useSearchParams()
-  const router = useRouter()
-  const sport = searchParams.get("sport") || "football"
-  const turfId = searchParams.get("turf") || "salt-lake"
+  const searchParams = useSearchParams();
+  const turfId = searchParams.get("turf") || "";
+  const sport = searchParams.get("sport") || "football";
 
-  const [date, setDate] = useState<Date | undefined>(new Date())
-  const [selectedSlots, setSelectedSlots] = useState<string[]>([])
-  const [totalPrice, setTotalPrice] = useState(0)
-  const [showPersonalDetailsModal, setShowPersonalDetailsModal] = useState(false)
-  const [personalDetails, setPersonalDetails] = useState({
-    name: "",
-    email: "",
-    phone: "",
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+  const [turfInfo, setTurfInfo] = useState<Turf | null>(null);
 
-  const turfs = {
-    "salt-lake": {
-      id: "salt-lake",
-      name: "Salt Lake Stadium Turf",
-      location: "Salt Lake, Sector V",
-      price: 800,
-      image: "/placeholder.svg?height=200&width=300",
-    },
-    "new-town": {
-      id: "new-town",
-      name: "New Town Sports Arena",
-      location: "New Town, Action Area II",
-      price: 750,
-      image: "/placeholder.svg?height=200&width=300",
-    },
-    "park-street": {
-      id: "park-street",
-      name: "Park Street Play Zone",
-      location: "Park Street Area",
-      price: 900,
-      image: "/placeholder.svg?height=200&width=300",
-    },
-    howrah: {
-      id: "howrah",
-      name: "Howrah Sports Complex",
-      location: "Howrah Bridge Area",
-      price: 700,
-      image: "/placeholder.svg?height=200&width=300",
-    },
-  }
+  const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
 
-  const sportNames = {
-    football: "Football",
-    cricket: "Cricket",
-    pickleball: "Pickleball",
-    badminton: "Badminton",
-    "table-tennis": "Table Tennis",
-    basketball: "Basketball",
-  }
+  const fetchTurfInfo = async () => {
+    const { data, error } = await supabase
+      .from("turfs")
+      .select("id, name, image, location, rating, price")
+      .eq("id", turfId)
+      .single();
 
-  const sportIcons = {
-    football: "/images/football-icon.png",
-    cricket: "/images/cricket-icon.png",
-    pickleball: "/images/pickleball-icon.png",
-    badminton: "/images/badminton-icon.png",
-    "table-tennis": "/images/table-tennis-icon.png",
-    basketball: "/images/basketball-icon.png",
-  }
+    if (!error && data) {
+      setTurfInfo(data);
+    } else {
+      console.error("Error fetching turf info:", error);
+    }
+  };
 
-  const sportIcon = sportIcons[sport as keyof typeof sportIcons]
-  const selectedTurf = turfs[turfId as keyof typeof turfs]
+  const fetchSlots = async () => {
+    if (!turfId || !formattedDate) return;
+    setLoading(true);
 
-  // Calculate total price whenever selected slots change
+    const { data: allSlots, error: slotError } = await supabase
+      .from("time_slots")
+      .select("*")
+      .order("start_time", { ascending: true });
+
+    if (slotError) {
+      console.error("Error fetching time slots:", slotError);
+      setSlots([]);
+      setLoading(false);
+      return;
+    }
+
+    const { data: existingBookings, error: bookingError } = await supabase
+      .from("bookings")
+      .select("slot")
+      .eq("turf_id", turfId)
+      .eq("date", formattedDate);
+
+    if (bookingError) {
+      console.error("Error fetching bookings:", bookingError);
+      setSlots([]);
+      setLoading(false);
+      return;
+    }
+
+    const bookedSlotIds = (existingBookings || []).flatMap((booking) => booking.slot);
+
+    const slotsWithStatus = (allSlots || []).map((slot: any) => ({
+      ...slot,
+      isBooked: bookedSlotIds.includes(slot.id),
+    }));
+
+    setSlots(slotsWithStatus);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    if (selectedSlots.length === 0) {
-      setTotalPrice(0)
-      return
+    fetchTurfInfo();
+    fetchSlots();
+  }, [formattedDate]);
+
+  const handleSlotToggle = (id: string) => {
+    if (selectedSlots.includes(id)) {
+      setSelectedSlots(selectedSlots.filter((s) => s !== id));
+    } else {
+      setSelectedSlots([...selectedSlots, id]);
     }
+  };
 
-    // Calculate the number of 30-minute periods based on start and end times
-    const timeSlots = generateTimeSlots()
+ /*  const handleConfirmBooking = async () => {
+  if (!selectedDate || selectedSlots.length === 0) return;
 
-    // Find the indices of the first and last selected slots
-    const firstSlotIndex = timeSlots.indexOf(selectedSlots[0])
-    const lastSlotIndex = timeSlots.indexOf(selectedSlots[selectedSlots.length - 1])
+  const { data, error } = await supabase.from("bookings").insert({
+    turf_id: turfId,
+    date: formattedDate,
+    slot: selectedSlots,
+    user_id: "temp-user-id", // Replace with real user_id when using auth
+  }).select("id").single(); // Get inserted booking's ID
 
-    // Calculate the number of 30-minute periods (number of slots - 1)
-    const numberOfPeriods = Math.max(1, lastSlotIndex - firstSlotIndex)
-
-    // Apply dynamic pricing:
-    // - First period: full price
-    // - Additional periods: 10% discount per period
-    const basePrice = selectedTurf.price
-    let total = basePrice // First period at full price
-
-    // Apply discount for additional periods
-    for (let i = 1; i < numberOfPeriods; i++) {
-      const discountFactor = Math.max(0.7, 1 - i * 0.1) // Maximum 30% discount
-      total += basePrice * discountFactor
-    }
-
-    setTotalPrice(Math.round(total))
-  }, [selectedSlots, selectedTurf.price])
-
-  // Generate time slots from 6 AM to 10 PM in 30-minute increments with range format
-  const generateTimeSlots = () => {
-    const slots = []
-    for (let hour = 6; hour < 22; hour++) {
-      const hourFormatted = hour % 12 === 0 ? 12 : hour % 12
-      const ampm = hour < 12 ? "AM" : "PM"
-
-      // First slot of the hour
-      slots.push(`${hourFormatted}:00 ${ampm}`)
-
-      // Second slot of the hour
-      slots.push(`${hourFormatted}:30 ${ampm}`)
-    }
-    return slots
+  if (error) {
+    console.error("Booking failed", error);
+    return;
   }
 
-  // Format a time slot to show the range (e.g., "6:00 AM - 6:30 AM")
-  const formatTimeSlotRange = (slot: string) => {
-    const timeSlots = generateTimeSlots()
-    const slotIndex = timeSlots.indexOf(slot)
-
-    if (slotIndex === -1 || slotIndex === timeSlots.length - 1) {
-      return slot
-    }
-
-    const nextSlot = timeSlots[slotIndex + 1]
-    return `${slot} - ${nextSlot}`
+  if (data?.id) {
+    // Redirect to confirmation page with booking ID
+    window.location.href = `/confirmation?bookingId=${data.id}`;
+  } else {
+    alert("Booking successful, but couldn't retrieve confirmation ID.");
+    setSelectedSlots([]);
+    fetchSlots();
   }
+}; */
 
-  const timeSlots = generateTimeSlots()
+const handleConfirmBooking = async () => {
+  if (!selectedDate || selectedSlots.length === 0) return;
 
-  // Simulate some slots as already booked
-  const bookedSlots = ["8:00 AM", "9:30 AM", "12:00 PM", "2:30 PM", "5:00 PM", "7:30 PM"]
-
-  const isSlotBooked = (slot: string) => bookedSlots.includes(slot)
-
-  const toggleSlot = (slot: string) => {
-    if (isSlotBooked(slot)) return
-
-    setSelectedSlots((prev) => {
-      // If slot is already selected, remove it
-      if (prev.includes(slot)) {
-        return prev.filter((s) => s !== slot)
-      }
-
-      // Check if the slot is adjacent to any already selected slot
-      const isAdjacent = prev.some((selectedSlot) => {
-        const selectedIndex = timeSlots.indexOf(selectedSlot)
-        const currentIndex = timeSlots.indexOf(slot)
-        return Math.abs(selectedIndex - currentIndex) === 1
-      })
-
-      // If no slots are selected yet or the new slot is adjacent to an existing one, add it
-      if (prev.length === 0 || isAdjacent) {
-        return [...prev, slot].sort((a, b) => {
-          return timeSlots.indexOf(a) - timeSlots.indexOf(b)
-        })
-      }
-
-      // Otherwise, replace all slots with just this one
-      return [slot]
+  const { data, error } = await supabase
+    .from("bookings")
+    .insert({
+      turf_id: turfId,
+      date: formattedDate,
+      slot: selectedSlots,
+      user_id: "00000000-0000-0000-0000-000000000000", // placeholder user id
     })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Booking failed", error);
+    return;
   }
 
-const handleConfirmBooking = () => {
-    if (selectedSlots.length === 0 || !date) return
-    setShowPersonalDetailsModal(true)
-  }
+  alert("Booking successful!");
+  setSelectedSlots([]);
+  fetchSlots();
 
-  const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    // Validate form
-    if (!personalDetails.name.trim() || !personalDetails.email.trim() || !personalDetails.phone.trim()) {
-      return
-    }
-
-    setIsSubmitting(true)
-
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
-    // In a real app, you would make an API call to create the booking
-    // For this demo, we'll just navigate to the confirmation page with the booking details
-    const bookingDetails = {
+  // Redirect to confirmation page with booking details
+  if (data) {
+    const bookingId = data.id; // assuming 'id' is the booking primary key
+    const query = new URLSearchParams({
+      bookingId,
       sport,
       turfId,
-      turfName: selectedTurf.name,
-      date: date ? format(date, "yyyy-MM-dd") : "",
+      turfName: turfInfo?.name || "",
+      date: formattedDate || "",
       slots: selectedSlots.join(","),
-      price: totalPrice,
-      bookingId: Math.random().toString(36).substring(2, 10).toUpperCase(),
-      customerName: personalDetails.name,
-      customerEmail: personalDetails.email,
-      customerPhone: personalDetails.phone,
-    }
+      price: turfInfo?.price?.toString() || "",
+    }).toString();
 
-    // Encode the booking details as URL parameters
-    const params = new URLSearchParams()
-    Object.entries(bookingDetails).forEach(([key, value]) => {
-      params.append(key, value.toString())
-    })
-
-        setIsSubmitting(false)
-    setShowPersonalDetailsModal(false)
-    router.push(`/whatsapp-confirmation?${params.toString()}`)
+    window.location.href = `/confirmation?${query}`;
   }
+};
 
-  const handlePersonalDetailsChange = (field: string, value: string) => {
-    setPersonalDetails((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
 
-  // Group time slots by morning, afternoon, evening
-  const morningSlots = timeSlots.filter((slot) => slot.includes("AM"))
-  const afternoonSlots = timeSlots.filter((slot) => slot.includes("PM") && Number.parseInt(slot.split(":")[0]) < 5)
-  const eveningSlots = timeSlots.filter((slot) => slot.includes("PM") && Number.parseInt(slot.split(":")[0]) >= 5)
+  const groupedSlots: { [key: string]: Slot[] } = {
+    morning: [],
+    afternoon: [],
+    evening: [],
+    night: [],
+  };
 
-  // Calculate the number of 30-minute periods
-  const calculateNumberOfPeriods = () => {
-    if (selectedSlots.length <= 1) return selectedSlots.length
-
-    const firstSlotIndex = timeSlots.indexOf(selectedSlots[0])
-    const lastSlotIndex = timeSlots.indexOf(selectedSlots[selectedSlots.length - 1])
-
-    return lastSlotIndex - firstSlotIndex
-  }
+  slots.forEach((slot) => {
+    if (groupedSlots[slot.period]) groupedSlots[slot.period].push(slot);
+  });
 
   return (
     <main className="container mx-auto px-6 py-12">
-      <div className="mb-12 max-w-5xl mx-auto">
-        <div className="flex items-center gap-3 mb-6">
-          <Button variant="ghost" size="sm" asChild className="gap-2 text-foreground">
-            <Link href={`/turfs?sport=${sport}`}>
-              <ArrowLeft className="h-4 w-4" />
-              Back to Turfs
-            </Link>
-          </Button>
-          <Badge
-            variant="outline"
-            className="text-base font-normal py-1.5 px-3 bg-secondary text-primary border-border rounded-full"
-          >
-            <img
-              src={sportIcon || "/placeholder.svg"}
-              alt={sportNames[sport as keyof typeof sportNames]}
-              className="h-4 w-4 mr-2"
-            />
-            {sportNames[sport as keyof typeof sportNames]}
-          </Badge>
-        </div>
-
-        <h1 className="text-4xl font-bold mb-6">Book Your Slot</h1>
+      <div className="flex items-center gap-3 mb-6">
+        <Button variant="ghost" size="sm" asChild className="gap-2 text-foreground">
+          <Link href={`/turfs?sport=${sport}`}>
+            <ArrowLeft className="h-4 w-4" />
+            Back to Turfs
+          </Link>
+        </Button>
+        <h1 className="text-2xl font-bold">Booking Page</h1>
       </div>
 
-      <div className="max-w-5xl mx-auto">
-        {/* Turf Info Card */}
-        <Card className="mb-12 overflow-hidden shadow-md bg-card border-border rounded-3xl">
-          <div className="md:flex">
-            <div className="md:w-1/3">
-              <img
-                src={selectedTurf.image || "/placeholder.svg"}
-                alt={selectedTurf.name}
-                className="h-full w-full object-cover aspect-video md:aspect-auto"
-              />
-            </div>
-            <div className="md:w-2/3 p-8">
-              <h2 className="text-2xl font-bold mb-3">{selectedTurf.name}</h2>
-              <div className="flex items-center text-muted-foreground mb-6 text-base">
-                <MapPin className="h-5 w-5 mr-2" />
-                <span>{selectedTurf.location}</span>
+      {turfInfo && (
+        <Card className="mb-10">
+          <div className="flex flex-col md:flex-row">
+            <img
+              src={turfInfo.image || "/placeholder.svg"}
+              alt={turfInfo.name}
+              className="w-full md:w-64 h-40 md:h-48 object-cover rounded-t-md md:rounded-l-md md:rounded-tr-none"
+            />
+            <CardContent className="p-6 w-full">
+              <h2 className="text-xl font-semibold mb-1">{turfInfo.name}</h2>
+              <div className="flex items-center text-muted-foreground text-sm mb-2">
+                <MapPin className="h-4 w-4 mr-1" />
+                {turfInfo.location}
               </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Price per 30 min</p>
-                  <p className="text-3xl font-bold text-primary">₹{selectedTurf.price}</p>
-                </div>
-                <Badge className="text-base bg-primary text-white hover:bg-mint-dark border-none px-3 py-1.5 rounded-full">
-                  Available Now
+              <div className="flex items-center gap-4">
+                <Badge className="bg-primary text-white px-3 py-1 rounded-full">
+                  ₹{turfInfo.price} per session
                 </Badge>
+                <div className="flex items-center">
+                  <Star className="h-4 w-4 text-yellow-500 mr-1" />
+                  {turfInfo.rating}
+                </div>
               </div>
-            </div>
+            </CardContent>
           </div>
         </Card>
+      )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-12">
-          <Card className="shadow-md bg-card border-border rounded-3xl">
-            <CardHeader className="pb-4 pt-6 px-8">
-              <CardTitle className="flex items-center gap-3 text-xl">
-                <CalendarIcon className="h-6 w-6 text-primary" />
-                Select Date
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-8 pb-8">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal py-6 text-base rounded-xl border-border bg-secondary text-foreground"
-                  >
-                    <CalendarIcon className="mr-3 h-5 w-5" />
-                    {date ? format(date, "PPP") : <span>Pick a date</span>}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 bg-card border-border">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={setDate}
-                    initialFocus
-                    disabled={(date) => date < new Date()}
-                    className="rounded-md border-border"
-                  />
-                </PopoverContent>
-              </Popover>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-md bg-card border-border rounded-3xl">
-            <CardHeader className="pb-4 pt-6 px-8">
-              <CardTitle className="flex items-center gap-3 text-xl">
-                <Clock className="h-6 w-6 text-primary" />
-                Selected Time Slots
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-8 pb-8">
-              {selectedSlots.length > 0 ? (
-                <div className="bg-secondary p-6 rounded-xl">
-                  <p className="text-sm text-muted-foreground mb-2">Your selected time slots</p>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {selectedSlots.map((slot) => (
-                      <Badge key={slot} className="bg-primary text-white px-3 py-2 rounded-full text-base">
-                        {slot}
-                      </Badge>
-                    ))}
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {calculateNumberOfPeriods()} x 30 minute periods
-                    {calculateNumberOfPeriods() > 1 && " (with multi-slot discount)"}
-                  </p>
-                </div>
-              ) : (
-                <div className="bg-secondary p-6 rounded-xl text-center">
-                  <p className="text-primary text-base">Please select time slots below</p>
-                  <p className="text-xs text-muted-foreground mt-2">You can select multiple adjacent slots</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+        <div>
+          <h2 className="text-lg font-semibold mb-2">Select Date:</h2>
+          <Calendar mode="single" selected={selectedDate!} onSelect={setSelectedDate} className="rounded-md border" />
         </div>
 
-        <Card className="mb-12 shadow-md bg-card border-border rounded-3xl">
-          <CardHeader className="pb-4 pt-6 px-8">
-            <CardTitle className="flex items-center gap-3 text-xl">
-              <Clock className="h-6 w-6 text-primary" />
-              Available Time Slots
-            </CardTitle>
-            <p className="text-sm text-muted-foreground mt-2">
-              Select multiple adjacent slots for longer booking periods
-            </p>
-          </CardHeader>
-          <CardContent className="px-8 pb-8">
-            <div className="space-y-8">
-              <div>
-                <h3 className="font-medium mb-4 text-lg text-muted-foreground">Morning</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {morningSlots.map((slot) => {
-                    const isBooked = isSlotBooked(slot)
-                    const isSelected = selectedSlots.includes(slot)
-                    return (
-                      <Button
-                        key={slot}
-                        variant={isSelected ? "default" : "outline"}
-                        className={cn(
-                          "h-auto py-3 text-sm rounded-xl relative",
-                          isBooked && "bg-secondary border-border text-foreground hover:bg-secondary/80",
-                          isSelected && "bg-primary text-white border-primary",
-                          !isSelected &&
-                            !isBooked &&
-                            "hover:border-primary hover:text-foreground bg-secondary border-border",
-                        )}
-                        disabled={isBooked}
-                        onClick={() => toggleSlot(slot)}
+        <div>
+          <h2 className="text-lg font-semibold mb-2">Available Time Slots:</h2>
+          {loading ? (
+            <p>Loading slots...</p>
+          ) : (
+            Object.keys(groupedSlots).map((period) => (
+              <div key={period} className="mb-6">
+                <h3 className="capitalize text-md font-medium mb-2">{period}</h3>
+                <div className="flex flex-wrap gap-3">
+                  {groupedSlots[period].length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No slots</p>
+                  ) : (
+                    groupedSlots[period].map((slot) => (
+                      <Badge
+                        key={slot.id}
+                        variant={slot.isBooked ? "outline" : selectedSlots.includes(slot.id) ? "default" : "secondary"}
+                        className={`cursor-pointer px-4 py-2 ${slot.isBooked ? "opacity-50 pointer-events-none" : ""}`}
+                        onClick={() => handleSlotToggle(slot.id)}
                       >
-                        {formatTimeSlotRange(slot)}
-                        {isBooked && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-secondary/90 rounded-xl">
-                            <div className="flex items-center text-foreground font-medium">
-                              <XCircle className="h-4 w-4 mr-1.5 text-foreground" />
-                              Booked
-                            </div>
-                          </div>
-                        )}
-                      </Button>
-                    )
-                  })}
+                        {slot.start_time} - {slot.end_time}
+                      </Badge>
+                    ))
+                  )}
                 </div>
               </div>
+            ))
+          )}
 
-              <div>
-                <h3 className="font-medium mb-4 text-lg text-muted-foreground">Afternoon</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {afternoonSlots.map((slot) => {
-                    const isBooked = isSlotBooked(slot)
-                    const isSelected = selectedSlots.includes(slot)
-                    return (
-                      <Button
-                        key={slot}
-                        variant={isSelected ? "default" : "outline"}
-                        className={cn(
-                          "h-auto py-3 text-sm rounded-xl relative",
-                          isBooked && "bg-secondary border-border text-foreground hover:bg-secondary/80",
-                          isSelected && "bg-primary text-white border-primary",
-                          !isSelected &&
-                            !isBooked &&
-                            "hover:border-primary hover:text-foreground bg-secondary border-border",
-                        )}
-                        disabled={isBooked}
-                        onClick={() => toggleSlot(slot)}
-                      >
-                        {formatTimeSlotRange(slot)}
-                        {isBooked && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-secondary/90 rounded-xl">
-                            <div className="flex items-center text-foreground font-medium">
-                              <XCircle className="h-4 w-4 mr-1.5 text-foreground" />
-                              Booked
-                            </div>
-                          </div>
-                        )}
-                      </Button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="font-medium mb-4 text-lg text-muted-foreground">Evening</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {eveningSlots.map((slot) => {
-                    const isBooked = isSlotBooked(slot)
-                    const isSelected = selectedSlots.includes(slot)
-                    return (
-                      <Button
-                        key={slot}
-                        variant={isSelected ? "default" : "outline"}
-                        className={cn(
-                          "h-auto py-3 text-sm rounded-xl relative",
-                          isBooked && "bg-secondary border-border text-foreground hover:bg-secondary/80",
-                          isSelected && "bg-primary text-white border-primary",
-                          !isSelected &&
-                            !isBooked &&
-                            "hover:border-primary hover:text-foreground bg-secondary border-border",
-                        )}
-                        disabled={isBooked}
-                        onClick={() => toggleSlot(slot)}
-                      >
-                        {formatTimeSlotRange(slot)}
-                        {isBooked && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-secondary/90 rounded-xl">
-                            <div className="flex items-center text-foreground font-medium">
-                              <XCircle className="h-4 w-4 mr-1.5 text-foreground" />
-                              Booked
-                            </div>
-                          </div>
-                        )}
-                      </Button>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="mb-12">
-          <Card className="bg-card border-border shadow-md rounded-3xl">
-            <CardContent className="p-8">
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h3 className="text-xl font-semibold mb-2">Booking Summary</h3>
-                  <div className="flex items-center gap-2 text-muted-foreground text-base">
-                    <img
-                      src={sportIcon || "/placeholder.svg"}
-                      alt={sportNames[sport as keyof typeof sportNames]}
-                      className="h-5 w-5"
-                    />
-                    <span>
-                      {sportNames[sport as keyof typeof sportNames]} - {selectedTurf.name}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-muted-foreground text-base">
-                    <CalendarIcon className="h-5 w-5" />
-                    <span>{date ? format(date, "PPP") : "Select a date"}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-muted-foreground text-base">
-                    <Clock className="h-5 w-5" />
-                    <span>
-                      {selectedSlots.length > 0
-                        ? `${selectedSlots[0]} - ${selectedSlots[selectedSlots.length - 1]} (${calculateNumberOfPeriods()} periods)`
-                        : "Select time slot(s)"}
-                    </span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-base text-muted-foreground">Total Amount</p>
-                  <p className="text-3xl font-bold text-primary">₹{totalPrice}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedSlots.length > 0 ? `${calculateNumberOfPeriods()} x 30 minutes` : "No slots selected"}
-                  </p>
-                </div>
-              </div>
-              <Button
-                className="w-full bg-primary hover:bg-mint-dark text-white rounded-full"
-                size="lg"
-                disabled={!date || selectedSlots.length === 0}
-                onClick={handleConfirmBooking}
-              >
-                Confirm Booking
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </CardContent>
-          </Card>
+          <Button className="mt-4" disabled={selectedSlots.length === 0} onClick={handleConfirmBooking}>
+            Confirm Booking
+          </Button>
         </div>
       </div>
-            {/* Personal Details Modal */}
-      <Dialog open={showPersonalDetailsModal} onOpenChange={setShowPersonalDetailsModal}>
-        <DialogContent className="sm:max-w-md bg-card border-border">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3 text-xl">
-              <User className="h-6 w-6 text-primary" />
-              Personal Details
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handlePersonalDetailsSubmit} className="space-y-6">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-sm font-medium">
-                  Full Name *
-                </Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="name"
-                    type="text"
-                    placeholder="Enter your full name"
-                    value={personalDetails.name}
-                    onChange={(e) => handlePersonalDetailsChange("name", e.target.value)}
-                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium">
-                  Email Address *
-                </Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="Enter your email address"
-                    value={personalDetails.email}
-                    onChange={(e) => handlePersonalDetailsChange("email", e.target.value)}
-                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="phone" className="text-sm font-medium">
-                  Phone Number *
-                </Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="phone"
-                    type="tel"
-                    placeholder="Enter your phone number"
-                    value={personalDetails.phone}
-                    onChange={(e) => handlePersonalDetailsChange("phone", e.target.value)}
-                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowPersonalDetailsModal(false)}
-                className="flex-1 py-3 rounded-xl border-border"
-                disabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="flex-1 bg-primary hover:bg-mint-dark text-white py-3 rounded-xl"
-                disabled={
-                  isSubmitting ||
-                  !personalDetails.name.trim() ||
-                  !personalDetails.email.trim() ||
-                  !personalDetails.phone.trim()
-                }
-              >
-                {isSubmitting ? "Processing..." : "Complete Booking"}
-                {!isSubmitting && <ArrowRight className="ml-2 h-4 w-4" />}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
     </main>
-  )
+  );
 }
