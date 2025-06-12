@@ -74,10 +74,10 @@ export default function RootLayout({
                     Book Now
                   </Link>
                   <ThemeToggle />
-                  <Button className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full">
+                  {/* <Button className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full">
                     <User className="h-4 w-4 mr-2" />
                     Sign In
-                  </Button>
+                  </Button> */}
                 </nav>
 
                 {/* Mobile Navigation */}
