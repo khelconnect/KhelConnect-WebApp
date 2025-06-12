@@ -1,20 +1,33 @@
+// Complete merged Booking Page UI + Supabase backend logic
 "use client";
 
-import type React from "react"
-
-import { useSearchParams, useRouter } from "next/navigation"
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { cn } from "@/lib/utils"
+import { format } from "date-fns";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  CalendarIcon,
+  Clock,
+  ArrowRight,
+  ArrowLeft,
+  MapPin,
+  XCircle,
+  User,
+  Mail,
+  Phone,
+  Star,
+} from "lucide-react";
+import Link from "next/link";
+
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { format } from "date-fns";
-import { CalendarIcon, Clock, ArrowRight, ArrowLeft, MapPin, XCircle, User, Mail, Phone, Star } from "lucide-react"
-import Link from "next/link";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface Slot {
   id: string;
@@ -35,7 +48,7 @@ interface Turf {
 
 export default function BookingPage() {
   const searchParams = useSearchParams();
-  const router = useRouter()
+  const router = useRouter();
   const turfId = searchParams.get("turf") || "";
   const sport = searchParams.get("sport") || "football";
 
@@ -44,13 +57,13 @@ export default function BookingPage() {
   const [loading, setLoading] = useState(false);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [turfInfo, setTurfInfo] = useState<Turf | null>(null);
-    const [showPersonalDetailsModal, setShowPersonalDetailsModal] = useState(false)
+  const [showPersonalDetailsModal, setShowPersonalDetailsModal] = useState(false);
   const [personalDetails, setPersonalDetails] = useState({
     name: "",
     email: "",
     phone: "",
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
 
@@ -61,41 +74,23 @@ export default function BookingPage() {
       .eq("id", turfId)
       .single();
 
-    if (!error && data) {
-      setTurfInfo(data);
-    } else {
-      console.error("Error fetching turf info:", error);
-    }
+    if (!error && data) setTurfInfo(data);
   };
 
   const fetchSlots = async () => {
     if (!turfId || !formattedDate) return;
     setLoading(true);
 
-    const { data: allSlots, error: slotError } = await supabase
+    const { data: allSlots } = await supabase
       .from("time_slots")
       .select("*")
       .order("start_time", { ascending: true });
 
-    if (slotError) {
-      console.error("Error fetching time slots:", slotError);
-      setSlots([]);
-      setLoading(false);
-      return;
-    }
-
-    const { data: existingBookings, error: bookingError } = await supabase
+    const { data: existingBookings } = await supabase
       .from("bookings")
       .select("slot")
       .eq("turf_id", turfId)
       .eq("date", formattedDate);
-
-    if (bookingError) {
-      console.error("Error fetching bookings:", bookingError);
-      setSlots([]);
-      setLoading(false);
-      return;
-    }
 
     const bookedSlotIds = (existingBookings || []).flatMap((booking) => booking.slot);
 
@@ -121,86 +116,35 @@ export default function BookingPage() {
     }
   };
 
- /*  const handleConfirmBooking = async () => {
-  if (!selectedDate || selectedSlots.length === 0) return;
+  const handleConfirmBooking = async () => {
+    if (!selectedDate || selectedSlots.length === 0) return;
 
-  const { data, error } = await supabase.from("bookings").insert({
-    turf_id: turfId,
-    date: formattedDate,
-    slot: selectedSlots,
-    user_id: "temp-user-id", // Replace with real user_id when using auth
-  }).select("id").single(); // Get inserted booking's ID
+    const { data, error } = await supabase
+      .from("bookings")
+      .insert({
+        turf_id: turfId,
+        date: formattedDate,
+        slot: selectedSlots,
+        user_id: "00000000-0000-0000-0000-000000000000",
+      })
+      .select()
+      .single();
 
-  if (error) {
-    console.error("Booking failed", error);
-    return;
-  }
-
-  if (data?.id) {
-    // Redirect to confirmation page with booking ID
-    window.location.href = `/confirmation?bookingId=${data.id}`;
-  } else {
-    alert("Booking successful, but couldn't retrieve confirmation ID.");
-    setSelectedSlots([]);
-    fetchSlots();
-  }
-}; */
-
-const handleConfirmBooking = async () => {
-  if (!selectedDate || selectedSlots.length === 0) return;
-
-  const { data, error } = await supabase
-    .from("bookings")
-    .insert({
-      turf_id: turfId,
-      date: formattedDate,
-      slot: selectedSlots,
-      user_id: "00000000-0000-0000-0000-000000000000", // placeholder user id
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Booking failed", error);
-    return;
-  }
-
-  setShowPersonalDetailsModal(true)
-  setSelectedSlots([]);
-  fetchSlots();
-
-  // Redirect to confirmation page with booking details
-  if (data) {
-    const bookingId = data.id; // assuming 'id' is the booking primary key
-    const query = new URLSearchParams({
-      bookingId,
-      sport,
-      turfId,
-      turfName: turfInfo?.name || "",
-      date: formattedDate || "",
-      slots: selectedSlots.join(","),
-      price: turfInfo?.price?.toString() || "",
-    }).toString();
-
-    // window.location.href = `/confirmation?${query}`;
-  }
-};
-
-const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    // Validate form
-    if (!personalDetails.name.trim() || !personalDetails.email.trim() || !personalDetails.phone.trim()) {
-      return
+    if (!error && data) {
+      setShowPersonalDetailsModal(true);
+      setSelectedSlots([]);
+      fetchSlots();
     }
+  };
 
-    setIsSubmitting(true)
+  const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    if (!personalDetails.name.trim() || !personalDetails.email.trim() || !personalDetails.phone.trim()) return;
 
-    // In a real app, you would make an API call to create the booking
-    // For this demo, we'll just navigate to the confirmation page with the booking details
+    setIsSubmitting(true);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     const bookingDetails = {
       sport,
       turfId,
@@ -212,29 +156,21 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
       customerName: personalDetails.name,
       customerEmail: personalDetails.email,
       customerPhone: personalDetails.phone,
-    }
+    };
 
-    // Encode the booking details as URL parameters
-    const params = new URLSearchParams()
+    const params = new URLSearchParams();
     Object.entries(bookingDetails).forEach(([key, value]) => {
-      params.append(key, value.toString())
-    })
+      params.append(key, value.toString());
+    });
 
-    setIsSubmitting(false)
-    setShowPersonalDetailsModal(false)
-    router.push(`/whatsapp-confirmation?${params.toString()}`)
-  }
+    setIsSubmitting(false);
+    setShowPersonalDetailsModal(false);
+    router.push(`/whatsapp-confirmation?${params.toString()}`);
+  };
 
   const handlePersonalDetailsChange = (field: string, value: string) => {
-    setPersonalDetails((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
-
-
-
-
+    setPersonalDetails((prev) => ({ ...prev, [field]: value }));
+  };
 
   const groupedSlots: { [key: string]: Slot[] } = {
     morning: [],
@@ -256,166 +192,240 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
             Back to Turfs
           </Link>
         </Button>
-        <h1 className="text-2xl font-bold">Booking Page</h1>
+        <h1 className="text-2xl font-bold">Book Your Slot</h1>
       </div>
 
       {turfInfo && (
-        <Card className="mb-10">
-          <div className="flex flex-col md:flex-row">
-            <img
-              src={turfInfo.image || "/placeholder.svg"}
-              alt={turfInfo.name}
-              className="w-full md:w-64 h-40 md:h-48 object-cover rounded-t-md md:rounded-l-md md:rounded-tr-none"
-            />
-            <CardContent className="p-6 w-full">
-              <h2 className="text-xl font-semibold mb-1">{turfInfo.name}</h2>
-              <div className="flex items-center text-muted-foreground text-sm mb-2">
-                <MapPin className="h-4 w-4 mr-1" />
-                {turfInfo.location}
-              </div>
-              <div className="flex items-center gap-4">
-                <Badge className="bg-primary text-white px-3 py-1 rounded-full">
-                  ₹{turfInfo.price} per session
-                </Badge>
-                <div className="flex items-center">
-                  <Star className="h-4 w-4 text-yellow-500 mr-1" />
-                  {turfInfo.rating}
-                </div>
-              </div>
-            </CardContent>
-          </div>
-        </Card>
-      )}
+        <Card className="mb-12 overflow-hidden shadow-md bg-card border-border rounded-3xl">
+  <div className="md:flex">
+    {/* Image */}
+    <div className="md:w-1/3">
+      <img
+        src={turfInfo.image}
+        alt={turfInfo.name}
+        className="h-full w-full object-cover aspect-video md:aspect-auto"
+      />
+    </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-        <div>
-          <h2 className="text-lg font-semibold mb-2">Select Date:</h2>
-          <Calendar mode="single" selected={selectedDate!} onSelect={setSelectedDate} className="rounded-md border" />
-        </div>
-
-        <div>
-          <h2 className="text-lg font-semibold mb-2">Available Time Slots:</h2>
-          {loading ? (
-            <p>Loading slots...</p>
-          ) : (
-            Object.keys(groupedSlots).map((period) => (
-              <div key={period} className="mb-6">
-                <h3 className="capitalize text-md font-medium mb-2">{period}</h3>
-                <div className="flex flex-wrap gap-3">
-                  {groupedSlots[period].length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No slots</p>
-                  ) : (
-                    groupedSlots[period].map((slot) => (
-                      <Badge
-                        key={slot.id}
-                        variant={slot.isBooked ? "outline" : selectedSlots.includes(slot.id) ? "default" : "secondary"}
-                        className={`cursor-pointer px-4 py-2 ${slot.isBooked ? "opacity-50 pointer-events-none" : ""}`}
-                        onClick={() => handleSlotToggle(slot.id)}
-                      >
-                        {slot.start_time} - {slot.end_time}
-                      </Badge>
-                    ))
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-
-          <Button className="mt-4" disabled={selectedSlots.length === 0} onClick={handleConfirmBooking}>
-            Confirm Booking
-          </Button>
-        </div>
+    {/* Content */}
+    <div className="md:w-2/3 p-8">
+      <h2 className="text-2xl font-bold mb-3">{turfInfo.name}</h2>
+      <div className="flex items-center text-muted-foreground mb-6 text-base">
+        <MapPin className="h-5 w-5 mr-2" />
+        <span>{turfInfo.location}</span>
       </div>
 
-      
-      {/* Personal Details Modal */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-muted-foreground">Price per 30 min</p>
+          <p className="text-3xl font-bold text-primary">₹{turfInfo.price}</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Badge className="text-base bg-primary text-white hover:bg-mint-dark border-none px-3 py-1.5 rounded-full">
+            Available Now
+          </Badge>
+          {/* {turfInfo.rating && (
+            <div className="flex items-center text-sm text-yellow-600 font-medium">
+              <Star className="h-4 w-4 mr-1" />
+              {turfInfo.rating}
+            </div>
+          )} */}
+        </div>
+      </div>
+    </div>
+  </div>
+</Card>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+  {/* Select Date Card */}
+  <Card className="bg-card border-border rounded-3xl">
+  <CardHeader className="pb-4 pt-6 px-8">
+    <CardTitle className="flex items-center gap-3 text-xl">
+      <CalendarIcon className="h-6 w-6 text-primary" />
+      Select Date
+    </CardTitle>
+  </CardHeader>
+  <CardContent className="px-8 pb-8">
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          className="w-full justify-start text-left font-normal py-6 text-base rounded-xl border-border bg-secondary text-foreground"
+        >
+          <CalendarIcon className="mr-3 h-5 w-5" />
+          {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0 bg-card border-border">
+        <Calendar
+          mode="single"
+          selected={selectedDate!}
+          onSelect={setSelectedDate}
+          initialFocus
+          disabled={(date) => date < new Date()}
+          className="rounded-md border-border"
+        />
+      </PopoverContent>
+    </Popover>
+  </CardContent>
+</Card>
+
+  {/* Selected Time Slots Card */}
+  <Card className="bg-card border-border rounded-3xl">
+    <CardHeader className="pb-4 pt-6 px-8">
+      <CardTitle className="flex items-center gap-3 text-xl">
+        <Clock className="h-6 w-6 text-primary" />
+        Selected Time Slots
+      </CardTitle>
+    </CardHeader>
+    <CardContent className="px-8 pb-8">
+      {selectedSlots.length > 0 ? (
+        <div className="bg-secondary p-6 rounded-xl">
+          <p className="text-sm text-muted-foreground mb-2">Your selected time slots</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {selectedSlots.map((slotId) => {
+              const slotObj = slots.find((s) => s.id === slotId);
+              return (
+                <Badge key={slotId} className="bg-primary text-white px-3 py-2 rounded-full text-base">
+                  {slotObj?.start_time}
+                </Badge>
+              );
+            })}
+          </div>
+          <p className="text-sm text-muted-foreground">{selectedSlots.length} × 30 minute periods</p>
+        </div>
+      ) : (
+        <div className="bg-secondary p-6 rounded-xl text-center">
+          <p className="text-primary text-base">Please select time slots below</p>
+          <p className="text-xs text-muted-foreground mt-2">You can select multiple adjacent slots</p>
+        </div>
+      )}
+    </CardContent>
+  </Card>
+</div>
+
+      <Card className="mb-10 bg-card border-border rounded-3xl">
+  <CardHeader className="pb-4 pt-6 px-8">
+    <CardTitle className="flex items-center gap-3 text-xl">
+      <Clock className="h-6 w-6 text-green-500" />
+      Available Time Slots
+    </CardTitle>
+    <p className="text-sm text-muted-foreground mt-2">
+      Select multiple adjacent slots for longer booking periods
+    </p>
+  </CardHeader>
+  <CardContent className="px-8 pb-8">
+    {loading ? (
+      <p>Loading...</p>
+    ) : (
+      Object.keys(groupedSlots).map((period) => (
+        <div key={period} className="mb-6">
+          <h3 className="capitalize text-md font-medium mb-2 text-muted-foreground">{period}</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {groupedSlots[period].map((slot) => {
+              const isSelected = selectedSlots.includes(slot.id);
+              return (
+                <Button
+                  key={slot.id}
+                  variant={isSelected ? "default" : "outline"}
+                  className={cn(
+                    "h-auto py-3 text-sm rounded-xl relative justify-center",
+                    slot.isBooked &&
+                      "bg-secondary border-border text-muted-foreground cursor-not-allowed opacity-50",
+                    isSelected && "bg-primary text-white border-primary",
+                    !isSelected &&
+                      !slot.isBooked &&
+                      "hover:border-primary hover:text-foreground bg-secondary border-border"
+                  )}
+                  disabled={slot.isBooked}
+                  onClick={() => handleSlotToggle(slot.id)}
+                >
+                  {slot.start_time} - {slot.end_time}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      ))
+    )}
+  </CardContent>
+</Card>
+<div className="mb-12">
+  <Card className="bg-card border-border shadow-md rounded-3xl">
+    <CardContent className="p-8">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h3 className="text-xl font-semibold mb-2">Booking Summary</h3>
+          <div className="flex items-center gap-2 text-muted-foreground text-base">
+            <span>
+              {sport.charAt(0).toUpperCase() + sport.slice(1)} - {turfInfo?.name}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-muted-foreground text-base">
+            <CalendarIcon className="h-5 w-5" />
+            <span>{selectedDate ? format(selectedDate, "PPP") : "Select a date"}</span>
+          </div>
+          <div className="flex items-center gap-2 text-muted-foreground text-base">
+            <Clock className="h-5 w-5" />
+            <span>
+              {selectedSlots.length > 0
+                ? `${slots.find(s => s.id === selectedSlots[0])?.start_time} - ${slots.find(s => s.id === selectedSlots[selectedSlots.length - 1])?.end_time} (${selectedSlots.length} periods)`
+                : "Select time slot(s)"}
+            </span>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-base text-muted-foreground">Total Amount</p>
+          <p className="text-3xl font-bold text-primary">₹{selectedSlots.length * (turfInfo?.price || 0)}</p>
+          <p className="text-sm text-muted-foreground">
+            {selectedSlots.length > 0 ? `${selectedSlots.length} x 30 minutes` : "No slots selected"}
+          </p>
+        </div>
+      </div>
+      <Button
+        className="w-full bg-primary hover:bg-mint-dark text-white rounded-full"
+        size="lg"
+        disabled={!selectedDate || selectedSlots.length === 0}
+        onClick={handleConfirmBooking}
+      >
+        Confirm Booking
+        <ArrowRight className="ml-2 h-5 w-5" />
+      </Button>
+    </CardContent>
+  </Card>
+</div>
+
+      {/* Modal */}
       <Dialog open={showPersonalDetailsModal} onOpenChange={setShowPersonalDetailsModal}>
         <DialogContent className="sm:max-w-md bg-card border-border">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3 text-xl">
-              <User className="h-6 w-6 text-primary" />
-              Personal Details
+              <User className="h-6 w-6 text-primary" /> Personal Details
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handlePersonalDetailsSubmit} className="space-y-6">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-sm font-medium">
-                  Full Name *
-                </Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="name"
-                    type="text"
-                    placeholder="Enter your full name"
-                    value={personalDetails.name}
-                    onChange={(e) => handlePersonalDetailsChange("name", e.target.value)}
-                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
-                    required
-                  />
-                </div>
+                <Label htmlFor="name">Full Name *</Label>
+                <Input id="name" type="text" value={personalDetails.name} onChange={(e) => handlePersonalDetailsChange("name", e.target.value)} required />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium">
-                  Email Address *
-                </Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="Enter your email address"
-                    value={personalDetails.email}
-                    onChange={(e) => handlePersonalDetailsChange("email", e.target.value)}
-                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
-                    required
-                  />
-                </div>
+                <Label htmlFor="email">Email Address *</Label>
+                <Input id="email" type="email" value={personalDetails.email} onChange={(e) => handlePersonalDetailsChange("email", e.target.value)} required />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="phone" className="text-sm font-medium">
-                  Phone Number *
-                </Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="phone"
-                    type="tel"
-                    placeholder="Enter your phone number"
-                    value={personalDetails.phone}
-                    onChange={(e) => handlePersonalDetailsChange("phone", e.target.value)}
-                    className="pl-10 py-3 rounded-xl border-border bg-secondary"
-                    required
-                  />
-                </div>
+                <Label htmlFor="phone">Phone Number *</Label>
+                <Input id="phone" type="tel" value={personalDetails.phone} onChange={(e) => handlePersonalDetailsChange("phone", e.target.value)} required />
               </div>
             </div>
-
             <div className="flex gap-3 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowPersonalDetailsModal(false)}
-                className="flex-1 py-3 rounded-xl border-border"
-                disabled={isSubmitting}
-              >
+              <Button type="button" variant="outline" onClick={() => setShowPersonalDetailsModal(false)} className="flex-1">
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                className="flex-1 bg-primary hover:bg-mint-dark text-white py-3 rounded-xl"
-                disabled={
-                  isSubmitting ||
-                  !personalDetails.name.trim() ||
-                  !personalDetails.email.trim() ||
-                  !personalDetails.phone.trim()
-                }
-              >
+              <Button type="submit" disabled={isSubmitting} className="flex-1 bg-primary text-white">
                 {isSubmitting ? "Processing..." : "Complete Booking"}
-                {!isSubmitting && <ArrowRight className="ml-2 h-4 w-4" />}
               </Button>
             </div>
           </form>
