@@ -64,7 +64,7 @@ export default function Home() {
       id: "table-tennis",
       name: "Table Tennis",
       description: "Professional tables for casual and competitive play.",
-      image: "/cards/tabletennis.jpg?height=400&width=300",
+      image: "/cards/tabletennis2.jpg?height=400&width=300",
       subtitle: "All Weather",
       icon: "/images/table-tennis-icon.png",
     },
