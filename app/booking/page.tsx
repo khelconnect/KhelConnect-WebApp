@@ -173,10 +173,8 @@ export default function BookingPage() {
   };
 
   const groupedSlots: { [key: string]: Slot[] } = {
-    morning: [],
-    afternoon: [],
-    evening: [],
-    night: [],
+    day: [],
+    evening: []
   };
 
   slots.forEach((slot) => {
