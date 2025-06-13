@@ -34,7 +34,7 @@ export default function Home() {
       description: "Book a turf for a game of football with friends or colleagues.",
       image: "/cards/football.jpg?height=400&width=300",
       subtitle: "Most Popular",
-      icon: "/images/football-icon.png",
+      icon: "/icons/football.svg",
     },
     {
       id: "cricket",
@@ -42,7 +42,7 @@ export default function Home() {
       description: "Find the perfect pitch for your cricket match in Kolkata.",
       image: "/cards/cricket.jpg?height=400&width=300",
       subtitle: "Team Sport",
-      icon: "/images/cricket-icon.png",
+      icon: "/icons/cricket.svg",
     },
     {
       id: "pickleball",
@@ -50,7 +50,7 @@ export default function Home() {
       description: "Book a court for the fastest growing sport in India.",
       image: "/cards/pickleball.jpg?height=400&width=300",
       subtitle: "Trending Now",
-      icon: "/images/pickleball-icon.png",
+      icon: "/icons/pickleball.svg",
     },
     {
       id: "badminton",
@@ -58,7 +58,7 @@ export default function Home() {
       description: "Indoor and outdoor courts available for badminton enthusiasts.",
       image: "/cards/badminton.jpg?height=400&width=300",
       subtitle: "Indoor Sport",
-      icon: "/images/badminton-icon.png",
+      icon: "/icons/badminton.svg",
     },
     {
       id: "table-tennis",
@@ -66,7 +66,7 @@ export default function Home() {
       description: "Professional tables for casual and competitive play.",
       image: "/cards/tabletennis2.jpg?height=400&width=300",
       subtitle: "All Weather",
-      icon: "/images/table-tennis-icon.png",
+      icon: "/icons/tabletennis.svg",
     },
     {
       id: "basketball",
@@ -74,7 +74,7 @@ export default function Home() {
       description: "Full and half courts available for basketball games.",
       image: "/cards/basketball.jpg?height=400&width=300",
       subtitle: "Team Sport",
-      icon: "/images/basketball-icon.png",
+      icon: "/icons/basketball.svg",
     },
   ]
 
@@ -83,7 +83,7 @@ export default function Home() {
       <Card className="overflow-hidden border-0 shadow-lg rounded-3xl h-[420px] relative group">
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent z-10"></div>
         <img
-          src={sport.image || "/placeholder.svg"}
+          src={sport.image}
           alt={sport.name}
           className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
         />
@@ -104,13 +104,14 @@ export default function Home() {
   return (
     <main className="container mx-auto px-6 py-12">
       <section className="mb-16 text-center max-w-3xl mx-auto">
-        <h1 className="text-5xl mb-6 bg-clip-text text-transparent bg-gradient-to-r from-primary to-mint-light font-qualyneue">
+        <div className="flex flex-col items-center text-center">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">Book Your Turf <br /> Unleash Your Game</h1>
+          <p className="text-xl text-muted-foreground">Book your favorite sports venue in Kolkata</p>
+        </div>
+        {/* <h1 className="text-5xl mb-6 bg-clip-text text-transparent bg-gradient-to-r from-primary to-mint-light font-qualyneue">
           <span className="font-bold">Khel</span>
           <span className="font-light">Connect</span>
-        </h1>
-        <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Book your favorite sports turf in Kolkata for football, cricket, or pickleball in 30-minute slots.
-        </p>
+        </h1> */}
       </section>
 
       <section className="mb-20">

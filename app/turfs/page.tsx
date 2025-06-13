@@ -61,12 +61,12 @@ export default function TurfsPage() {
   }
 
   const sportIcons = {
-    football: "/images/football-icon.png",
-    cricket: "/images/cricket-icon.png",
-    pickleball: "/images/pickleball-icon.png",
-    badminton: "/images/badminton-icon.png",
-    "table-tennis": "/images/table-tennis-icon.png",
-    basketball: "/images/basketball-icon.png",
+    football: "/icons/footballgreen.svg",
+    cricket: "/icons/cricketgreen.svg",
+    pickleball: "/icons/pickleballgreen.svg",
+    badminton: "/icons/badmintongreen.svg",
+    "table-tennis": "/icons/tabletennisgreen.svg",
+    basketball: "/icons/basketballgreen.svg",
   }
 
   const sportIcon = sportIcons[sport as keyof typeof sportIcons] || sportIcons.football
