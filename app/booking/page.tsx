@@ -64,6 +64,7 @@ export default function BookingPage() {
     phone: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
 
   const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
 
@@ -246,7 +247,7 @@ export default function BookingPage() {
     </CardTitle>
   </CardHeader>
   <CardContent className="px-8 pb-8">
-    <Popover>
+    <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -260,7 +261,12 @@ export default function BookingPage() {
         <Calendar
           mode="single"
           selected={selectedDate!}
-          onSelect={setSelectedDate}
+            onSelect={(selected) => {
+              if (selected) {
+                setSelectedDate(selected);
+               setIsCalendarOpen(false); // Close popover after selection
+              }
+  }}
           initialFocus
           disabled={(date) => date < new Date()}
           className="rounded-md border-border"
