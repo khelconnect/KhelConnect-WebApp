@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { ThemeScript } from "./theme-script"
 import localFont from "next/font/local"
 import { MainNavbar } from "@/components/main-navbar"
+import { Facebook, Twitter, Instagram } from "lucide-react"
 
 const qualyNeue = localFont({
   src: [
@@ -52,7 +53,7 @@ export default function RootLayout({
             <div className="flex-1">{children}</div>
             <footer className="mt-auto border-t border-border py-10 bg-background">
               <div className="container mx-auto px-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
                   <div>
                     <h3 className="font-bold mb-5 text-lg">Khelconnect</h3>
                     <p className="text-muted-foreground">
@@ -88,14 +89,43 @@ export default function RootLayout({
                     <h3 className="font-bold mb-5 text-lg">Contact</h3>
                     <address className="not-italic text-muted-foreground">
                       <p className="mt-3">Email: khelconnectindia@gmail.com</p>
-                      <p>Phone: +91 9874014180</p>
+                      <p>Phone: +91 8777527449</p>
                       <br />
                       <p>Kolkata, West Bengal, India</p>
                     </address>
                   </div>
+                  <div>
+                    <h3 className="font-bold mb-5 text-lg">Follow Us</h3>
+                    <div className="flex gap-4">
+                      <Link
+                        href="https://www.facebook.com/khelconnectkolkata/"
+                        className="text-muted-foreground hover:text-primary transition-colors"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Facebook className="h-6 w-6" />
+                      </Link>
+                      <Link
+                        href="https://x.com/khelconnect_in"
+                        className="text-muted-foreground hover:text-primary transition-colors"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Twitter className="h-6 w-6" />
+                      </Link>
+                      <Link
+                        href="https://www.instagram.com/khelconnect_in/"
+                        className="text-muted-foreground hover:text-primary transition-colors"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Instagram className="h-6 w-6" />
+                      </Link>
+                    </div>
+                  </div>
                 </div>
                 <div className="mt-10 pt-6 border-t border-border text-center text-muted-foreground">
-                  <p>© {new Date().getFullYear()} Khelconnect. All rights reserved.</p>
+                  <p>{new Date().getFullYear()} Khelconnect. All rights reserved.</p>
                 </div>
               </div>
             </footer>
