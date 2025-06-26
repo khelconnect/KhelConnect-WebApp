@@ -64,6 +64,7 @@ export default function BookingPage() {
     phone: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
 
   const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
@@ -117,57 +118,84 @@ export default function BookingPage() {
     }
   };
 
-  const handleConfirmBooking = async () => {
-    if (!selectedDate || selectedSlots.length === 0) return;
+  const handleConfirmBooking = async (customUserId?: string) => {
+  if (!selectedDate || selectedSlots.length === 0) return;
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .insert({
-        turf_id: turfId,
-        date: formattedDate,
-        slot: selectedSlots,
-        user_id: "00000000-0000-0000-0000-000000000000",
-      })
-      .select()
-      .single();
+  const { data, error } = await supabase
+    .from("bookings")
+    .insert({
+      turf_id: turfId,
+      date: formattedDate,
+      slot: selectedSlots,
+      user_id: customUserId || userId || "00000000-0000-0000-0000-000000000000",
+    })
+    .select()
+    .single();
 
-    if (!error && data) {
-      setShowPersonalDetailsModal(true);
-      setSelectedSlots([]);
-      fetchSlots();
-    }
-  };
+  if (!error && data) {
+    const bookingId = Math.random().toString(36).substring(2, 10).toUpperCase();
 
-  const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    setSelectedSlots([]);
+    setUserId(null);
+    fetchSlots();
 
-    if (!personalDetails.name.trim() || !personalDetails.email.trim() || !personalDetails.phone.trim()) return;
+    // ✅ REDIRECT
+    router.push(
+      `/whatsapp-confirmation?` +
+        new URLSearchParams({
+          sport,
+          turfId,
+          turfName: turfInfo?.name || "",
+          date: formattedDate || "",
+          slots: selectedSlots.join(","),
+          price: turfInfo?.price?.toString() || "",
+          bookingId,
+          customerName: personalDetails.name,
+          customerEmail: personalDetails.email,
+          customerPhone: personalDetails.phone,
+        }).toString()
+    );
+  } else {
+    console.error("Booking failed:", error?.message);
+  }
+};
 
-    setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    const bookingDetails = {
-      sport,
-      turfId,
-      turfName: turfInfo?.name || "",
-      date: formattedDate || "",
-      slots: selectedSlots.join(","),
-      price: turfInfo?.price?.toString() || "",
-      bookingId: Math.random().toString(36).substring(2, 10).toUpperCase(),
-      customerName: personalDetails.name,
-      customerEmail: personalDetails.email,
-      customerPhone: personalDetails.phone,
-    };
+const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    const params = new URLSearchParams();
-    Object.entries(bookingDetails).forEach(([key, value]) => {
-      params.append(key, value.toString());
+  const { name, email, phone } = personalDetails;
+  if (!name.trim() || !email.trim() || !phone.trim()) return;
+
+  setIsSubmitting(true);
+
+  const generatedUserId = crypto.randomUUID();
+
+  // Insert into Supabase `users` table
+  const { error } = await supabase
+    .from("users")
+    .insert({
+      id: generatedUserId,
+      name,
+      email,
+      phone,
     });
 
+  if (error) {
+    console.error("Error saving user details:", error.message);
     setIsSubmitting(false);
-    setShowPersonalDetailsModal(false);
-    router.push(`/whatsapp-confirmation?${params.toString()}`);
-  };
+    return;
+  }
+
+  setUserId(generatedUserId); // Save userId to state
+
+  setShowPersonalDetailsModal(false);
+  setIsSubmitting(false);
+
+  // Proceed to confirm booking after user details are stored
+  handleConfirmBooking(generatedUserId);
+};
+
 
   const handlePersonalDetailsChange = (field: string, value: string) => {
     setPersonalDetails((prev) => ({ ...prev, [field]: value }));
@@ -392,7 +420,7 @@ export default function BookingPage() {
         className="w-full bg-primary hover:bg-mint-dark text-white rounded-full"
         size="lg"
         disabled={!selectedDate || selectedSlots.length === 0}
-        onClick={handleConfirmBooking}
+        onClick={() => setShowPersonalDetailsModal(true)}
       >
         Confirm Booking
         <ArrowRight className="ml-2 h-5 w-5" />
