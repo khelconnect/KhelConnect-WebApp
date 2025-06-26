@@ -15,8 +15,15 @@ export function MainNavbar() {
     <header className="border-b border-border sticky top-0 bg-background z-10">
       <div className="container mx-auto px-6 py-5 flex justify-between items-center">
         <Link href={isOwnerSection ? "/owner/dashboard" : "/"} className="font-bold text-xl flex items-center gap-3">
-          <span className="bg-primary text-primary-foreground p-1.5 rounded-full text-sm">KC</span>
-          Khelconnect {isOwnerSection && <span className="text-primary">Partner</span>}
+          {/* <span className="bg-primary text-primary-foreground p-1.5 rounded-full text-sm">KC</span> */}
+          <img
+            src="/logo.png"
+            alt="Khelconnect Logo"
+            className="h-12 w-12 rounded-full object-contain"
+          />
+          <p className="font-qualyneue"><span className="font-bold">Khel</span>
+          <span className="font-light">Connect</span>
+          {isOwnerSection && <span className="text-primary"> Partner</span>}</p>
         </Link>
 
         {/* Desktop Navigation */}
