@@ -21,13 +21,13 @@ const supabase = createClient(
 );
 
 const sportsOptions = [
-  "Football",
-  "Cricket",
-  "Badminton",
-  "Pickleball",
-  "Basketball",
-  "Table Tennis",
-  "Bowling",
+  "football",
+  "cricket",
+  "badminton",
+  "pickleball",
+  "basketball",
+  "table Tennis",
+  "bowling",
 ];
 
 export default function TurfAdminPanel() {
