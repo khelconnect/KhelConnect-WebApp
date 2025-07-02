@@ -41,12 +41,12 @@ export default function QRCodePage() {
       </a>
 
       <p className="mt-4 text-gray-600 dark:text-gray-300 text-center max-w-sm">
-        Tap or long-press the QR to open or share in any payment app. You can also use the button below.
+        Tap or long-press the QR to open or share in any payment app on your phone. You can also use the button below.
       </p>
 
       <button
         onClick={handleShare}
-        className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+        className="mt-6 px-4 py-2 justify-start bg-primary hover:bg-primary/90 text-primary-foreground rounded-full"
       >
         Share QR Code
       </button>
