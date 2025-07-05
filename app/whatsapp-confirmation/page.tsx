@@ -2,15 +2,17 @@
 
 import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import { MessageCircle, CheckCircle, Home, Calendar, Clock, MapPin, User, Phone } from "lucide-react"
+import { MessageCircle, CheckCircle, Home, Calendar, Clock, MapPin, User, Phone, CreditCard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { format, parse } from "date-fns"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 export default function WhatsAppConfirmationPage() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [messageSent, setMessageSent] = useState(false)
   const [bookingDetails, setBookingDetails] = useState({
     sport: "",
@@ -106,6 +108,14 @@ export default function WhatsAppConfirmationPage() {
     }
   }
 
+    const handleProceedToPayment = () => {
+    const params = new URLSearchParams()
+    Object.entries(bookingDetails).forEach(([key, value]) => {
+      if (value) params.set(key, value)
+    })
+    router.push(`/payment?${params.toString()}`)
+  }
+
   return (
     <main className="container mx-auto px-6 py-12">
       <div className="max-w-2xl mx-auto">
@@ -191,6 +201,38 @@ export default function WhatsAppConfirmationPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* WhatsApp Instructions */}
+        <Card className="mb-8 bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 rounded-3xl">
+          <CardContent className="p-8">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <MessageCircle className="h-6 w-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Next Steps</h3>
+                <div className="space-y-2 text-green-700 dark:text-green-300">
+                  <p>1. You will receive a WhatsApp message shortly with your booking details</p>
+                  <p>2. Our team will confirm availability and share payment details</p>
+                  <p>3. Complete payment via UPI/WhatsApp Pay to secure your booking</p>
+                  <p>4. Receive final confirmation with venue details</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Action Buttons */}
+        <div className="flex flex-col gap-4">
+          <Button
+            onClick={handleProceedToPayment}
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base rounded-full"
+          >
+            <CreditCard className="mr-2 h-5 w-5" />
+            Proceed to Payment
+          </Button>
+
+        </div>
 
         {/* Navigation */}
         <div className="flex justify-center mt-4">
