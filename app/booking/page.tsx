@@ -66,6 +66,10 @@ export default function BookingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [showConflictDialog, setShowConflictDialog] = useState(false);
+  const [existingUser, setExistingUser] = useState<any>(null);
+  const [conflictFields, setConflictFields] = useState<{ name?: boolean; email?: boolean }>({});
+
 
   const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
 
@@ -160,39 +164,66 @@ export default function BookingPage() {
   }
 };
 
-
 const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
-
   const { name, email, phone } = personalDetails;
   if (!name.trim() || !email.trim() || !phone.trim()) return;
 
   setIsSubmitting(true);
 
-  const generatedUserId = crypto.randomUUID();
-
-  // Insert into Supabase `users` table
-  const { error } = await supabase
+  // Check for existing user
+  const { data: existingUsers, error: checkError } = await supabase
     .from("users")
-    .insert({
-      id: generatedUserId,
-      name,
-      email,
-      phone,
-    });
+    .select("*")
+    .eq("phone", phone);
 
-  if (error) {
-    console.error("Error saving user details:", error.message);
+  if (checkError) {
+    console.error("Error checking existing user:", checkError.message);
     setIsSubmitting(false);
     return;
   }
 
-  setUserId(generatedUserId); // Save userId to state
+  const existing = existingUsers?.[0];
 
+  if (existing) {
+    // Check for conflicts
+    const nameDiff = existing.name !== name;
+    const emailDiff = existing.email !== email;
+
+    if (nameDiff || emailDiff) {
+      setExistingUser(existing);
+      setConflictFields({ name: nameDiff, email: emailDiff });
+      setShowConflictDialog(true);
+      setIsSubmitting(false);
+      return;
+    }
+
+    // No conflict, use existing
+    setUserId(existing.id);
+    setShowPersonalDetailsModal(false);
+    setIsSubmitting(false);
+    handleConfirmBooking(existing.id);
+    return;
+  }
+
+  // No existing user, insert new
+  const generatedUserId = crypto.randomUUID();
+  const { error: insertError } = await supabase.from("users").insert({
+    id: generatedUserId,
+    name,
+    email,
+    phone,
+  });
+
+  if (insertError) {
+    console.error("Error saving user details:", insertError.message);
+    setIsSubmitting(false);
+    return;
+  }
+
+  setUserId(generatedUserId);
   setShowPersonalDetailsModal(false);
   setIsSubmitting(false);
-
-  // Proceed to confirm booking after user details are stored
   handleConfirmBooking(generatedUserId);
 };
 
@@ -356,28 +387,53 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
         <div key={period} className="mb-6">
           <h3 className="capitalize text-md font-medium mb-2 text-muted-foreground">{period}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {groupedSlots[period].map((slot) => {
-              const isSelected = selectedSlots.includes(slot.id);
-              return (
-                <Button
-                  key={slot.id}
-                  variant={isSelected ? "default" : "outline"}
-                  className={cn(
-                    "h-auto py-3 text-sm rounded-xl relative justify-center",
-                    slot.isBooked &&
-                      "bg-secondary border-border text-muted-foreground cursor-not-allowed opacity-50",
-                    isSelected && "bg-primary text-white border-primary",
-                    !isSelected &&
-                      !slot.isBooked &&
-                      "hover:border-primary hover:text-foreground bg-secondary border-border"
-                  )}
-                  disabled={slot.isBooked}
-                  onClick={() => handleSlotToggle(slot.id)}
-                >
-                  {slot.start_time} - {slot.end_time}
-                </Button>
-              );
-            })}
+{groupedSlots[period].map((slot) => {
+  const isSelected = selectedSlots.includes(slot.id);
+
+  // Determine if slot is in the past (only if selected date is today)
+  let isPast = false;
+  if (selectedDate) {
+    const today = new Date();
+    const selected = new Date(selectedDate);
+    if (
+      selected.getFullYear() === today.getFullYear() &&
+      selected.getMonth() === today.getMonth() &&
+      selected.getDate() === today.getDate()
+    ) {
+      const [slotHour, slotMinute] = slot.start_time.split(":").map(Number);
+      const slotDateTime = new Date(
+        selected.getFullYear(),
+        selected.getMonth(),
+        selected.getDate(),
+        slotHour,
+        slotMinute
+      );
+      isPast = slotDateTime < today;
+    }
+  }
+
+  return (
+    <Button
+      key={slot.id}
+      variant={isSelected ? "default" : "outline"}
+      className={cn(
+        "h-auto py-3 text-sm rounded-xl relative justify-center",
+        (slot.isBooked || isPast) &&
+          "bg-secondary border-border text-muted-foreground cursor-not-allowed opacity-50",
+        isSelected && "bg-primary text-white border-primary",
+        !isSelected &&
+          !slot.isBooked &&
+          !isPast &&
+          "hover:border-primary hover:text-foreground bg-secondary border-border"
+      )}
+      disabled={slot.isBooked || isPast}
+      onClick={() => handleSlotToggle(slot.id)}
+    >
+      {slot.start_time} - {slot.end_time}
+    </Button>
+  );
+})}
+
           </div>
         </div>
       ))
@@ -463,6 +519,59 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
           </form>
         </DialogContent>
       </Dialog>
+      <Dialog open={showConflictDialog} onOpenChange={setShowConflictDialog}>
+  <DialogContent className="sm:max-w-md bg-card border-border">
+    <DialogHeader>
+      <DialogTitle className="text-lg font-semibold">User Already Exists</DialogTitle>
+    </DialogHeader>
+    <p className="text-sm text-muted-foreground mb-4">
+      A user with this phone number already exists.
+    </p>
+    <ul className="mb-4 text-sm">
+      {conflictFields.name && (
+        <li>
+          <strong>Name:</strong> {existingUser?.name} → {personalDetails.name}
+        </li>
+      )}
+      {conflictFields.email && (
+        <li>
+          <strong>Email:</strong> {existingUser?.email} → {personalDetails.email}
+        </li>
+      )}
+    </ul>
+    <div className="flex gap-3">
+      <Button
+        variant="outline"
+        className="flex-1"
+        onClick={() => {
+          setUserId(existingUser.id);
+          setShowConflictDialog(false);
+          setShowPersonalDetailsModal(false);
+          handleConfirmBooking(existingUser.id);
+        }}
+      >
+        Keep Existing
+      </Button>
+      <Button
+        className="flex-1 bg-primary text-white"
+        onClick={async () => {
+          const updates: any = {};
+          if (conflictFields.name) updates.name = personalDetails.name;
+          if (conflictFields.email) updates.email = personalDetails.email;
+
+          await supabase.from("users").update(updates).eq("id", existingUser.id);
+          setUserId(existingUser.id);
+          setShowConflictDialog(false);
+          setShowPersonalDetailsModal(false);
+          handleConfirmBooking(existingUser.id);
+        }}
+      >
+        Update Info
+      </Button>
+    </div>
+  </DialogContent>
+</Dialog>
+
     </main>
   );
 }
