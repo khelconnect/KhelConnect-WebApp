@@ -1,15 +1,25 @@
-"use client"
+'use client'
 
-import { useSearchParams } from "next/navigation"
-import { useEffect, useState } from "react"
-import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle, Check } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { format, parse } from "date-fns"
-import { toast } from "@/hooks/use-toast"
-import Image from "next/image"
+import { useSearchParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import {
+  QrCode,
+  Copy,
+  CreditCard,
+  MessageCircle,
+  CheckCircle,
+  AlertCircle,
+  Check,
+  IndianRupee,
+  Send
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { format, parse } from 'date-fns'
+import { toast } from '@/hooks/use-toast'
+import Image from 'next/image'
 
 export default function PaymentPage() {
   const searchParams = useSearchParams()
@@ -17,31 +27,31 @@ export default function PaymentPage() {
   const [showQRText, setShowQRText] = useState(false)
 
   const [bookingDetails, setBookingDetails] = useState({
-    sport: "",
-    turfId: "",
-    turfName: "",
-    date: "",
-    slots: "",
-    price: "",
-    bookingId: "",
-    customerName: "",
-    customerEmail: "",
-    customerPhone: "",
+    sport: '',
+    turfId: '',
+    turfName: '',
+    date: '',
+    slots: '',
+    price: '',
+    bookingId: '',
+    customerName: '',
+    customerEmail: '',
+    customerPhone: '',
   })
 
-  const upiId = "9674785422.etb@icici"
+  const upiId = '9674785422.etb@icici'
 
   useEffect(() => {
-    const sport = searchParams.get("sport") || ""
-    const turfId = searchParams.get("turfId") || ""
-    const turfName = searchParams.get("turfName") || ""
-    const date = searchParams.get("date") || ""
-    const slots = searchParams.get("slots") || ""
-    const price = searchParams.get("price") || ""
-    const bookingId = searchParams.get("bookingId") || ""
-    const customerName = searchParams.get("customerName") || ""
-    const customerEmail = searchParams.get("customerEmail") || ""
-    const customerPhone = searchParams.get("customerPhone") || ""
+    const sport = searchParams.get('sport') || ''
+    const turfId = searchParams.get('turfId') || ''
+    const turfName = searchParams.get('turfName') || ''
+    const date = searchParams.get('date') || ''
+    const slots = searchParams.get('slots') || ''
+    const price = searchParams.get('price') || ''
+    const bookingId = searchParams.get('bookingId') || ''
+    const customerName = searchParams.get('customerName') || ''
+    const customerEmail = searchParams.get('customerEmail') || ''
+    const customerPhone = searchParams.get('customerPhone') || ''
 
     setBookingDetails({
       sport,
@@ -58,42 +68,42 @@ export default function PaymentPage() {
   }, [searchParams])
 
   const sportNames = {
-    football: "Football",
-    cricket: "Cricket",
-    pickleball: "Pickleball",
-    badminton: "Badminton",
-    "table-tennis": "Table Tennis",
-    basketball: "Basketball",
+    football: 'Football',
+    cricket: 'Cricket',
+    pickleball: 'Pickleball',
+    badminton: 'Badminton',
+    'table-tennis': 'Table Tennis',
+    basketball: 'Basketball',
   }
 
   const formatDate = (dateString: string) => {
-    if (!dateString) return ""
+    if (!dateString) return ''
     try {
-      const date = parse(dateString, "yyyy-MM-dd", new Date())
-      return format(date, "EEE, dd MMM yyyy")
+      const date = parse(dateString, 'yyyy-MM-dd', new Date())
+      return format(date, 'EEE, dd MMM yyyy')
     } catch (error) {
       return dateString
     }
   }
 
   const slotArray = bookingDetails.slots
-    ? bookingDetails.slots.split(",").map((s) => s.trim())
+    ? bookingDetails.slots.split(',').map((s) => s.trim())
     : []
 
   const copyUpiId = async () => {
     try {
       await navigator.clipboard.writeText(upiId)
       toast({
-        title: "Copied!",
-        description: "UPI ID copied to clipboard",
+        title: 'Copied!',
+        description: 'UPI ID copied to clipboard',
       })
       setCopied(true)
       setTimeout(() => setCopied(false), 1000)
     } catch (err) {
       toast({
-        title: "Error",
-        description: "Failed to copy UPI ID",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to copy UPI ID',
+        variant: 'destructive',
       })
     }
   }
@@ -107,10 +117,10 @@ export default function PaymentPage() {
     const message = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}`
     const encodedMessage = encodeURIComponent(message)
     const whatsappUrl = `https://wa.me/919876543210?text=${encodedMessage}`
-    window.open(whatsappUrl, "_blank")
+    window.open(whatsappUrl, '_blank')
   }
 
-  const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent)
+  const isMobile = typeof window !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent)
 
   return (
     <main className="container mx-auto px-6 py-12">
@@ -136,12 +146,12 @@ export default function PaymentPage() {
             <div className="flex justify-center">
               <div
                 className="relative group p-4 rounded-2xl shadow-lg cursor-pointer text-center"
-                onClick={handlePayWithUPI}
-                onMouseEnter={() => setShowQRText(true)}
-                onMouseLeave={() => setShowQRText(false)}
+                onClick={isMobile ? handlePayWithUPI : undefined}
+                onMouseEnter={() => !isMobile && setShowQRText(true)}
+                onMouseLeave={() => !isMobile && setShowQRText(false)}
               >
                 {showQRText ? (
-                  <div className="h-[192px] w-[192px] flex items-center justify-center text-sm bg-primary text-gray-700 dark:text-gray-200 font-semibold">
+                  <div className="h-[192px] w-[192px] flex items-center justify-center text-sm bg-primary text-white font-semibold rounded-xl">
                     Please scan this QR with your mobile device
                   </div>
                 ) : (
@@ -161,10 +171,10 @@ export default function PaymentPage() {
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground text-center">Or pay directly using UPI ID:</p>
               <div
-                className="flex items-center gap-2 p-3 bg-secondary rounded-xl"
+                className="flex items-center gap-2 p-3 bg-secondary rounded-xl cursor-pointer"
                 onClick={isMobile ? handlePayWithUPI : undefined}
               >
-                <span className="flex-1 font-mono text-center cursor-pointer">{upiId}</span>
+                <span className="flex-1 font-mono text-center">{upiId}</span>
                 <Button
                   size="sm"
                   variant="outline"
@@ -172,7 +182,7 @@ export default function PaymentPage() {
                     e.stopPropagation()
                     copyUpiId()
                   }}
-                  className="shrink-0 bg-transparent"
+                  className="shrink-0 bg-transparent hover:bg-primary/10 transition-colors"
                 >
                   {copied ? (
                     <Check className="h-4 w-4 text-green-600 transition-transform scale-110 duration-200" />
@@ -180,17 +190,19 @@ export default function PaymentPage() {
                     <Copy className="h-4 w-4" />
                   )}
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handlePayWithUPI()
+                  }}
+                  className="shrink-0 bg-transparent hover:bg-primary/10 transition-colors"
+                >
+                  <Send className="h-4 w-4 text-primary" />
+                </Button>
               </div>
             </div>
-
-            {/* Pay Button */}
-            <Button
-              onClick={handlePayWithUPI}
-              className="w-full py-6 text-base rounded-full bg-primary hover:bg-primary/90"
-            >
-              <CreditCard className="mr-2 h-5 w-5" />
-              Pay with UPI
-            </Button>
           </CardContent>
         </Card>
 
@@ -214,7 +226,7 @@ export default function PaymentPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Sport & Turf:</span>
                 <span>
-                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} -{" "}
+                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} -{' '}
                   {bookingDetails.turfName}
                 </span>
               </div>
@@ -273,7 +285,7 @@ export default function PaymentPage() {
 
         <div className="mt-8 text-center">
           <p className="text-sm text-muted-foreground">
-            Payment issues? Call us at{" "}
+            Payment issues? Call us at{' '}
             <a href="tel:+919876543210" className="text-primary hover:underline">
               +91 98765 43210
             </a>
