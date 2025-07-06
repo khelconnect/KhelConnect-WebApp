@@ -1,25 +1,15 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
-import {
-  QrCode,
-  Copy,
-  CreditCard,
-  MessageCircle,
-  CheckCircle,
-  AlertCircle,
-  Check,
-  IndianRupee,
-  Send
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { format, parse } from 'date-fns'
-import { toast } from '@/hooks/use-toast'
-import Image from 'next/image'
+import { useSearchParams } from "next/navigation"
+import { useEffect, useState } from "react"
+import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle, Check } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { format, parse } from "date-fns"
+import { toast } from "@/hooks/use-toast"
+import Image from "next/image"
 
 export default function PaymentPage() {
   const searchParams = useSearchParams()
@@ -27,100 +17,88 @@ export default function PaymentPage() {
   const [showQRText, setShowQRText] = useState(false)
 
   const [bookingDetails, setBookingDetails] = useState({
-    sport: '',
-    turfId: '',
-    turfName: '',
-    date: '',
-    slots: '',
-    price: '',
-    bookingId: '',
-    customerName: '',
-    customerEmail: '',
-    customerPhone: '',
+    sport: "",
+    turfId: "",
+    turfName: "",
+    date: "",
+    slots: "",
+    price: "",
+    bookingId: "",
+    customerName: "",
+    customerEmail: "",
+    customerPhone: "",
   })
 
-  const upiId = '9674785422.etb@icici'
+  const upiId = "9674785422.etb@icici"
 
   useEffect(() => {
-    const sport = searchParams.get('sport') || ''
-    const turfId = searchParams.get('turfId') || ''
-    const turfName = searchParams.get('turfName') || ''
-    const date = searchParams.get('date') || ''
-    const slots = searchParams.get('slots') || ''
-    const price = searchParams.get('price') || ''
-    const bookingId = searchParams.get('bookingId') || ''
-    const customerName = searchParams.get('customerName') || ''
-    const customerEmail = searchParams.get('customerEmail') || ''
-    const customerPhone = searchParams.get('customerPhone') || ''
-
     setBookingDetails({
-      sport,
-      turfId,
-      turfName,
-      date,
-      slots,
-      price,
-      bookingId,
-      customerName,
-      customerEmail,
-      customerPhone,
+      sport: searchParams.get("sport") || "",
+      turfId: searchParams.get("turfId") || "",
+      turfName: searchParams.get("turfName") || "",
+      date: searchParams.get("date") || "",
+      slots: searchParams.get("slots") || "",
+      price: searchParams.get("price") || "",
+      bookingId: searchParams.get("bookingId") || "",
+      customerName: searchParams.get("customerName") || "",
+      customerEmail: searchParams.get("customerEmail") || "",
+      customerPhone: searchParams.get("customerPhone") || "",
     })
   }, [searchParams])
 
-  const sportNames = {
-    football: 'Football',
-    cricket: 'Cricket',
-    pickleball: 'Pickleball',
-    badminton: 'Badminton',
-    'table-tennis': 'Table Tennis',
-    basketball: 'Basketball',
-  }
-
   const formatDate = (dateString: string) => {
-    if (!dateString) return ''
+    if (!dateString) return ""
     try {
-      const date = parse(dateString, 'yyyy-MM-dd', new Date())
-      return format(date, 'EEE, dd MMM yyyy')
+      const date = parse(dateString, "yyyy-MM-dd", new Date())
+      return format(date, "EEE, dd MMM yyyy")
     } catch (error) {
       return dateString
     }
   }
 
   const slotArray = bookingDetails.slots
-    ? bookingDetails.slots.split(',').map((s) => s.trim())
+    ? bookingDetails.slots.split(",").map((s) => s.trim())
     : []
 
-  const copyUpiId = async () => {
+  const handlePayAndCopy = async () => {
     try {
       await navigator.clipboard.writeText(upiId)
       toast({
-        title: 'Copied!',
-        description: 'UPI ID copied to clipboard',
+        title: "Copied!",
+        description: "UPI ID copied to clipboard",
       })
       setCopied(true)
+
+      const upiUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&am=${bookingDetails.price}&cu=INR&tn=Booking+ID:+${bookingDetails.bookingId}`
+      window.location.href = upiUrl
+
       setTimeout(() => setCopied(false), 1000)
     } catch (err) {
       toast({
-        title: 'Error',
-        description: 'Failed to copy UPI ID',
-        variant: 'destructive',
+        title: "Error",
+        description: "Failed to copy UPI ID",
+        variant: "destructive",
       })
     }
-  }
-
-  const handlePayWithUPI = () => {
-    const upiUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&am=${bookingDetails.price}&cu=INR&tn=Booking+ID:+${bookingDetails.bookingId}`
-    window.location.href = upiUrl
   }
 
   const handleWhatsAppSupport = () => {
     const message = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}`
     const encodedMessage = encodeURIComponent(message)
     const whatsappUrl = `https://wa.me/919876543210?text=${encodedMessage}`
-    window.open(whatsappUrl, '_blank')
+    window.open(whatsappUrl, "_blank")
   }
 
-  const isMobile = typeof window !== 'undefined' && /Mobi|Android/i.test(navigator.userAgent)
+  const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent)
+
+  const sportNames = {
+    football: "Football",
+    cricket: "Cricket",
+    pickleball: "Pickleball",
+    badminton: "Badminton",
+    "table-tennis": "Table Tennis",
+    basketball: "Basketball",
+  }
 
   return (
     <main className="container mx-auto px-6 py-12">
@@ -145,24 +123,26 @@ export default function PaymentPage() {
             {/* QR Code */}
             <div className="flex justify-center">
               <div
-                className="relative group p-4 rounded-2xl shadow-lg cursor-pointer text-center"
-                onClick={isMobile ? handlePayWithUPI : undefined}
-                onMouseEnter={() => !isMobile && setShowQRText(true)}
-                onMouseLeave={() => !isMobile && setShowQRText(false)}
+                className="relative group p-2 bg-white rounded-xl shadow-lg cursor-pointer text-center transition-all"
+                onClick={isMobile ? handlePayAndCopy : undefined}
+                onMouseEnter={() => setShowQRText(true)}
+                onMouseLeave={() => setShowQRText(false)}
               >
-                {showQRText ? (
-                  <div className="h-[192px] w-[192px] flex items-center justify-center text-sm bg-primary text-white font-semibold rounded-xl">
-                    Please scan this QR with your mobile device
-                  </div>
-                ) : (
-                  <Image
-                    src="/assets/khelconnect_qr.jpeg"
-                    alt="KhelConnect QR"
-                    width={192}
-                    height={192}
-                    className="rounded-xl"
-                  />
-                )}
+                <div className="w-48 h-48 rounded-xl overflow-hidden flex items-center justify-center bg-white">
+                  {showQRText ? (
+                    <div className="w-full h-full flex items-center justify-center text-sm font-medium text-primary text-center px-2">
+                      Please scan this QR with your mobile device
+                    </div>
+                  ) : (
+                    <Image
+                      src="/assets/khelconnect_qr.jpeg"
+                      alt="KhelConnect QR"
+                      width={192}
+                      height={192}
+                      className="rounded-xl object-contain"
+                    />
+                  )}
+                </div>
                 <p className="text-xs text-center text-gray-500 mt-2">Tap to open UPI App</p>
               </div>
             </div>
@@ -171,35 +151,24 @@ export default function PaymentPage() {
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground text-center">Or pay directly using UPI ID:</p>
               <div
-                className="flex items-center gap-2 p-3 bg-secondary rounded-xl cursor-pointer"
-                onClick={isMobile ? handlePayWithUPI : undefined}
+                className="flex items-center gap-2 p-3 bg-secondary rounded-xl"
+                onClick={isMobile ? handlePayAndCopy : undefined}
               >
-                <span className="flex-1 font-mono text-center">{upiId}</span>
+                <span className="flex-1 font-mono text-center cursor-pointer">{upiId}</span>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={(e) => {
                     e.stopPropagation()
-                    copyUpiId()
+                    handlePayAndCopy()
                   }}
-                  className="shrink-0 bg-transparent hover:bg-primary/10 transition-colors"
+                  className="shrink-0 bg-transparent"
                 >
                   {copied ? (
                     <Check className="h-4 w-4 text-green-600 transition-transform scale-110 duration-200" />
                   ) : (
                     <Copy className="h-4 w-4" />
                   )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handlePayWithUPI()
-                  }}
-                  className="shrink-0 bg-transparent hover:bg-primary/10 transition-colors"
-                >
-                  <Send className="h-4 w-4 text-primary" />
                 </Button>
               </div>
             </div>
@@ -226,7 +195,7 @@ export default function PaymentPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Sport & Turf:</span>
                 <span>
-                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} -{' '}
+                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} -{" "}
                   {bookingDetails.turfName}
                 </span>
               </div>
@@ -285,7 +254,7 @@ export default function PaymentPage() {
 
         <div className="mt-8 text-center">
           <p className="text-sm text-muted-foreground">
-            Payment issues? Call us at{' '}
+            Payment issues? Call us at{" "}
             <a href="tel:+919876543210" className="text-primary hover:underline">
               +91 98765 43210
             </a>
