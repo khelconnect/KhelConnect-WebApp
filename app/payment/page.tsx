@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
+import Image from "next/image"
 import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +13,7 @@ import { toast } from "@/hooks/use-toast"
 
 export default function PaymentPage() {
   const searchParams = useSearchParams()
+
   const [bookingDetails, setBookingDetails] = useState({
     sport: "",
     turfId: "",
@@ -28,28 +30,17 @@ export default function PaymentPage() {
   const upiId = "khelconnect@paytm"
 
   useEffect(() => {
-    const sport = searchParams.get("sport") || ""
-    const turfId = searchParams.get("turfId") || ""
-    const turfName = searchParams.get("turfName") || ""
-    const date = searchParams.get("date") || ""
-    const slots = searchParams.get("slots") || ""
-    const price = searchParams.get("price") || ""
-    const bookingId = searchParams.get("bookingId") || ""
-    const customerName = searchParams.get("customerName") || ""
-    const customerEmail = searchParams.get("customerEmail") || ""
-    const customerPhone = searchParams.get("customerPhone") || ""
-
     setBookingDetails({
-      sport,
-      turfId,
-      turfName,
-      date,
-      slots,
-      price,
-      bookingId,
-      customerName,
-      customerEmail,
-      customerPhone,
+      sport: searchParams.get("sport") || "",
+      turfId: searchParams.get("turfId") || "",
+      turfName: searchParams.get("turfName") || "",
+      date: searchParams.get("date") || "",
+      slots: searchParams.get("slots") || "",
+      price: searchParams.get("price") || "",
+      bookingId: searchParams.get("bookingId") || "",
+      customerName: searchParams.get("customerName") || "",
+      customerEmail: searchParams.get("customerEmail") || "",
+      customerPhone: searchParams.get("customerPhone") || "",
     })
   }, [searchParams])
 
@@ -63,12 +54,20 @@ export default function PaymentPage() {
   }
 
   const formatDate = (dateString: string) => {
-    if (!dateString) return ""
     try {
       const date = parse(dateString, "yyyy-MM-dd", new Date())
       return format(date, "EEE, dd MMM yyyy")
-    } catch (error) {
+    } catch {
       return dateString
+    }
+  }
+
+  const formatTime = (time: string) => {
+    try {
+      const parsed = parse(time, "HH:mm", new Date())
+      return format(parsed, "hh:mm a")
+    } catch {
+      return time
     }
   }
 
@@ -77,11 +76,8 @@ export default function PaymentPage() {
   const copyUpiId = async () => {
     try {
       await navigator.clipboard.writeText(upiId)
-      toast({
-        title: "Copied!",
-        description: "UPI ID copied to clipboard",
-      })
-    } catch (err) {
+      toast({ title: "Copied!", description: "UPI ID copied to clipboard" })
+    } catch {
       toast({
         title: "Error",
         description: "Failed to copy UPI ID",
@@ -91,19 +87,16 @@ export default function PaymentPage() {
   }
 
   const handlePayWithUPI = () => {
-    alert("Payment process initiated! Please complete the payment using your UPI app.")
+    const intentUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&mc=0000&tid=${bookingDetails.bookingId}&tr=${bookingDetails.bookingId}&tn=KhelConnect%20Booking&am=${bookingDetails.price}&cu=INR`
+
+    if (typeof window !== "undefined") {
+      window.location.href = intentUrl
+    }
   }
 
   const handleWhatsAppSupport = () => {
-    const message = `Hi! I need help with payment for my booking:
-
-Booking ID: ${bookingDetails.bookingId}
-Amount: ₹${bookingDetails.price}
-
-Please assist me with the payment process.`
-
-    const encodedMessage = encodeURIComponent(message)
-    const whatsappUrl = `https://wa.me/919876543210?text=${encodedMessage}`
+    const message = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}\n\nPlease assist me with the payment process.`
+    const whatsappUrl = `https://wa.me/919876543210?text=${encodeURIComponent(message)}`
     window.open(whatsappUrl, "_blank")
   }
 
@@ -118,7 +111,7 @@ Please assist me with the payment process.`
           <p className="text-muted-foreground">Secure your booking by completing the payment</p>
         </div>
 
-        {/* UPI Payment Section */}
+        {/* UPI Section */}
         <Card className="mb-6 rounded-3xl">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -127,20 +120,25 @@ Please assist me with the payment process.`
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* QR Code */}
+            {/* QR Image */}
             <div className="flex justify-center">
-              <div className="bg-white p-4 rounded-2xl shadow-lg">
-                <div className="w-48 h-48 bg-gray-100 rounded-xl flex items-center justify-center">
-                  <div className="text-center">
-                    <QrCode className="h-16 w-16 mx-auto mb-2 text-gray-400" />
-                    <p className="text-sm text-gray-500">UPI QR Code</p>
-                    <p className="text-xs text-gray-400 mt-1">₹{bookingDetails.price}</p>
-                  </div>
-                </div>
+              <div
+                className="bg-white p-4 rounded-2xl shadow-lg cursor-pointer"
+                onClick={handlePayWithUPI}
+                title="Click to open UPI app"
+              >
+                <Image
+                  src="/assets/khelconnect_qr.jpeg"
+                  alt="KhelConnect UPI QR"
+                  width={192}
+                  height={192}
+                  className="rounded-lg object-contain w-48 h-48"
+                />
+                <p className="text-center text-xs text-gray-600 mt-2">Tap to pay via UPI</p>
               </div>
             </div>
 
-            {/* UPI ID */}
+            {/* UPI ID Copy */}
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground text-center">Or pay directly using UPI ID:</p>
               <div className="flex items-center gap-2 p-3 bg-secondary rounded-xl">
@@ -192,7 +190,7 @@ Please assist me with the payment process.`
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Time:</span>
                 <span>
-                  {slotArray[0]} - {slotArray[slotArray.length - 1]}
+                  {formatTime(slotArray[0])} - {formatTime(slotArray[slotArray.length - 1])}
                 </span>
               </div>
               <div className="flex justify-between items-center pt-3 border-t">
@@ -203,7 +201,7 @@ Please assist me with the payment process.`
           </CardContent>
         </Card>
 
-        {/* Payment Instructions */}
+        {/* Instructions */}
         <Alert className="mb-6 border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
           <CheckCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800 dark:text-blue-200">
