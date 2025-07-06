@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle } from "lucide-react"
+import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -10,11 +10,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { format, parse } from "date-fns"
 import { toast } from "@/hooks/use-toast"
 import Image from "next/image"
-import { motion, AnimatePresence } from "framer-motion"
 
 export default function PaymentPage() {
   const searchParams = useSearchParams()
   const [copied, setCopied] = useState(false)
+  const [showQRText, setShowQRText] = useState(false)
+
   const [bookingDetails, setBookingDetails] = useState({
     sport: "",
     turfId: "",
@@ -31,19 +32,29 @@ export default function PaymentPage() {
   const upiId = "9674785422.etb@icici"
 
   useEffect(() => {
-    const details = {
-      sport: searchParams.get("sport") || "",
-      turfId: searchParams.get("turfId") || "",
-      turfName: searchParams.get("turfName") || "",
-      date: searchParams.get("date") || "",
-      slots: searchParams.get("slots") || "",
-      price: searchParams.get("price") || "",
-      bookingId: searchParams.get("bookingId") || "",
-      customerName: searchParams.get("customerName") || "",
-      customerEmail: searchParams.get("customerEmail") || "",
-      customerPhone: searchParams.get("customerPhone") || "",
-    }
-    setBookingDetails(details)
+    const sport = searchParams.get("sport") || ""
+    const turfId = searchParams.get("turfId") || ""
+    const turfName = searchParams.get("turfName") || ""
+    const date = searchParams.get("date") || ""
+    const slots = searchParams.get("slots") || ""
+    const price = searchParams.get("price") || ""
+    const bookingId = searchParams.get("bookingId") || ""
+    const customerName = searchParams.get("customerName") || ""
+    const customerEmail = searchParams.get("customerEmail") || ""
+    const customerPhone = searchParams.get("customerPhone") || ""
+
+    setBookingDetails({
+      sport,
+      turfId,
+      turfName,
+      date,
+      slots,
+      price,
+      bookingId,
+      customerName,
+      customerEmail,
+      customerPhone,
+    })
   }, [searchParams])
 
   const sportNames = {
@@ -56,38 +67,50 @@ export default function PaymentPage() {
   }
 
   const formatDate = (dateString: string) => {
+    if (!dateString) return ""
     try {
       const date = parse(dateString, "yyyy-MM-dd", new Date())
       return format(date, "EEE, dd MMM yyyy")
-    } catch {
+    } catch (error) {
       return dateString
     }
   }
 
-  const slotArray = bookingDetails.slots.split(",").map((s) => s.trim()).filter(Boolean)
+  const slotArray = bookingDetails.slots
+    ? bookingDetails.slots.split(",").map((s) => s.trim())
+    : []
 
   const copyUpiId = async () => {
     try {
       await navigator.clipboard.writeText(upiId)
+      toast({
+        title: "Copied!",
+        description: "UPI ID copied to clipboard",
+      })
       setCopied(true)
-      toast({ title: "Copied!", description: "UPI ID copied to clipboard" })
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      toast({ title: "Error", description: "Failed to copy UPI ID", variant: "destructive" })
+      setTimeout(() => setCopied(false), 1000)
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to copy UPI ID",
+        variant: "destructive",
+      })
     }
   }
 
   const handlePayWithUPI = () => {
-    // Redirect to UPI intent link (works only on supported devices/browsers)
-    const upiLink = `upi://pay?pa=${upiId}&pn=KhelConnect&cu=INR&am=${bookingDetails.price}`
-    window.location.href = upiLink
+    const upiUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&am=${bookingDetails.price}&cu=INR&tn=Booking+ID:+${bookingDetails.bookingId}`
+    window.location.href = upiUrl
   }
 
   const handleWhatsAppSupport = () => {
-    const msg = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}\n\nPlease assist me with the payment process.`
-    const encoded = encodeURIComponent(msg)
-    window.open(`https://wa.me/919876543210?text=${encoded}`, "_blank")
+    const message = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}`
+    const encodedMessage = encodeURIComponent(message)
+    const whatsappUrl = `https://wa.me/919876543210?text=${encodedMessage}`
+    window.open(whatsappUrl, "_blank")
   }
+
+  const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent)
 
   return (
     <main className="container mx-auto px-6 py-12">
@@ -110,49 +133,52 @@ export default function PaymentPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             {/* QR Code */}
-            <div className="flex justify-center cursor-pointer" onClick={handlePayWithUPI}>
-              <div className="bg-white p-4 rounded-2xl shadow-lg">
-                <Image
-                  src="/assets/khelconnect_qr.jpeg"
-                  alt="UPI QR Code"
-                  width={192}
-                  height={192}
-                  className="rounded-xl"
-                />
-                <p className="text-center text-xs text-gray-500 mt-2">Tap QR to open UPI app</p>
+            <div className="flex justify-center">
+              <div
+                className="relative group p-4 rounded-2xl shadow-lg cursor-pointer text-center"
+                onClick={handlePayWithUPI}
+                onMouseEnter={() => setShowQRText(true)}
+                onMouseLeave={() => setShowQRText(false)}
+              >
+                {showQRText ? (
+                  <div className="h-[192px] w-[192px] flex items-center justify-center text-sm bg-primary text-gray-700 dark:text-gray-200 font-semibold">
+                    Please scan this QR with your mobile device
+                  </div>
+                ) : (
+                  <Image
+                    src="/assets/khelconnect_qr.jpeg"
+                    alt="KhelConnect QR"
+                    width={192}
+                    height={192}
+                    className="rounded-xl"
+                  />
+                )}
+                <p className="text-xs text-center text-gray-500 mt-2">Tap to open UPI App</p>
               </div>
             </div>
 
             {/* UPI ID */}
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground text-center">Or pay using UPI ID:</p>
+              <p className="text-sm text-muted-foreground text-center">Or pay directly using UPI ID:</p>
               <div
-                className="flex items-center gap-2 p-3 bg-secondary rounded-xl cursor-pointer"
-                onClick={handlePayWithUPI}
+                className="flex items-center gap-2 p-3 bg-secondary rounded-xl"
+                onClick={isMobile ? handlePayWithUPI : undefined}
               >
-                <span className="flex-1 font-mono text-center">{upiId}</span>
-                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); copyUpiId() }}>
-                  <AnimatePresence mode="wait">
-                    {copied ? (
-                      <motion.div
-                        key="check"
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.5 }}
-                      >
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="copy"
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.5 }}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                <span className="flex-1 font-mono text-center cursor-pointer">{upiId}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    copyUpiId()
+                  }}
+                  className="shrink-0 bg-transparent"
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-600 transition-transform scale-110 duration-200" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
                 </Button>
               </div>
             </div>
@@ -188,7 +214,8 @@ export default function PaymentPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Sport & Turf:</span>
                 <span>
-                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} - {bookingDetails.turfName}
+                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} -{" "}
+                  {bookingDetails.turfName}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -198,7 +225,9 @@ export default function PaymentPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Time:</span>
                 <span>
-                  {slotArray[0]} - {slotArray[slotArray.length - 1]}
+                  {slotArray.length > 1
+                    ? `${slotArray[0]} - ${slotArray[slotArray.length - 1]}`
+                    : slotArray[0]}
                 </span>
               </div>
               <div className="flex justify-between items-center pt-3 border-t">
