@@ -2,7 +2,6 @@
 
 import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import Image from "next/image"
 import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,10 +9,12 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { format, parse } from "date-fns"
 import { toast } from "@/hooks/use-toast"
+import Image from "next/image"
+import { motion, AnimatePresence } from "framer-motion"
 
 export default function PaymentPage() {
   const searchParams = useSearchParams()
-
+  const [copied, setCopied] = useState(false)
   const [bookingDetails, setBookingDetails] = useState({
     sport: "",
     turfId: "",
@@ -27,10 +28,10 @@ export default function PaymentPage() {
     customerPhone: "",
   })
 
-  const upiId = "khelconnect@paytm"
+  const upiId = "9674785422.etb@icici"
 
   useEffect(() => {
-    setBookingDetails({
+    const details = {
       sport: searchParams.get("sport") || "",
       turfId: searchParams.get("turfId") || "",
       turfName: searchParams.get("turfName") || "",
@@ -41,7 +42,8 @@ export default function PaymentPage() {
       customerName: searchParams.get("customerName") || "",
       customerEmail: searchParams.get("customerEmail") || "",
       customerPhone: searchParams.get("customerPhone") || "",
-    })
+    }
+    setBookingDetails(details)
   }, [searchParams])
 
   const sportNames = {
@@ -62,42 +64,29 @@ export default function PaymentPage() {
     }
   }
 
-  const formatTime = (time: string) => {
-    try {
-      const parsed = parse(time, "HH:mm", new Date())
-      return format(parsed, "hh:mm a")
-    } catch {
-      return time
-    }
-  }
-
-  const slotArray = bookingDetails.slots ? bookingDetails.slots.split(",") : []
+  const slotArray = bookingDetails.slots.split(",").map((s) => s.trim()).filter(Boolean)
 
   const copyUpiId = async () => {
     try {
       await navigator.clipboard.writeText(upiId)
+      setCopied(true)
       toast({ title: "Copied!", description: "UPI ID copied to clipboard" })
+      setTimeout(() => setCopied(false), 1500)
     } catch {
-      toast({
-        title: "Error",
-        description: "Failed to copy UPI ID",
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: "Failed to copy UPI ID", variant: "destructive" })
     }
   }
 
   const handlePayWithUPI = () => {
-    const intentUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&mc=0000&tid=${bookingDetails.bookingId}&tr=${bookingDetails.bookingId}&tn=KhelConnect%20Booking&am=${bookingDetails.price}&cu=INR`
-
-    if (typeof window !== "undefined") {
-      window.location.href = intentUrl
-    }
+    // Redirect to UPI intent link (works only on supported devices/browsers)
+    const upiLink = `upi://pay?pa=${upiId}&pn=KhelConnect&cu=INR&am=${bookingDetails.price}`
+    window.location.href = upiLink
   }
 
   const handleWhatsAppSupport = () => {
-    const message = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}\n\nPlease assist me with the payment process.`
-    const whatsappUrl = `https://wa.me/919876543210?text=${encodeURIComponent(message)}`
-    window.open(whatsappUrl, "_blank")
+    const msg = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}\n\nPlease assist me with the payment process.`
+    const encoded = encodeURIComponent(msg)
+    window.open(`https://wa.me/919876543210?text=${encoded}`, "_blank")
   }
 
   return (
@@ -111,7 +100,7 @@ export default function PaymentPage() {
           <p className="text-muted-foreground">Secure your booking by completing the payment</p>
         </div>
 
-        {/* UPI Section */}
+        {/* UPI Payment Section */}
         <Card className="mb-6 rounded-3xl">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -120,31 +109,50 @@ export default function PaymentPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* QR Image */}
-            <div className="flex justify-center">
-              <div
-                className="bg-white p-4 rounded-2xl shadow-lg cursor-pointer"
-                onClick={handlePayWithUPI}
-                title="Click to open UPI app"
-              >
+            {/* QR Code */}
+            <div className="flex justify-center cursor-pointer" onClick={handlePayWithUPI}>
+              <div className="bg-white p-4 rounded-2xl shadow-lg">
                 <Image
                   src="/assets/khelconnect_qr.jpeg"
-                  alt="KhelConnect UPI QR"
+                  alt="UPI QR Code"
                   width={192}
                   height={192}
-                  className="rounded-lg object-contain w-48 h-48"
+                  className="rounded-xl"
                 />
-                <p className="text-center text-xs text-gray-600 mt-2">Tap to pay via UPI</p>
+                <p className="text-center text-xs text-gray-500 mt-2">Tap QR to open UPI app</p>
               </div>
             </div>
 
-            {/* UPI ID Copy */}
+            {/* UPI ID */}
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground text-center">Or pay directly using UPI ID:</p>
-              <div className="flex items-center gap-2 p-3 bg-secondary rounded-xl">
+              <p className="text-sm text-muted-foreground text-center">Or pay using UPI ID:</p>
+              <div
+                className="flex items-center gap-2 p-3 bg-secondary rounded-xl cursor-pointer"
+                onClick={handlePayWithUPI}
+              >
                 <span className="flex-1 font-mono text-center">{upiId}</span>
-                <Button size="sm" variant="outline" onClick={copyUpiId} className="shrink-0 bg-transparent">
-                  <Copy className="h-4 w-4" />
+                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); copyUpiId() }}>
+                  <AnimatePresence mode="wait">
+                    {copied ? (
+                      <motion.div
+                        key="check"
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.5 }}
+                      >
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="copy"
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.5 }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </Button>
               </div>
             </div>
@@ -190,7 +198,7 @@ export default function PaymentPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Time:</span>
                 <span>
-                  {formatTime(slotArray[0])} - {formatTime(slotArray[slotArray.length - 1])}
+                  {slotArray[0]} - {slotArray[slotArray.length - 1]}
                 </span>
               </div>
               <div className="flex justify-between items-center pt-3 border-t">
@@ -201,7 +209,7 @@ export default function PaymentPage() {
           </CardContent>
         </Card>
 
-        {/* Instructions */}
+        {/* Payment Instructions */}
         <Alert className="mb-6 border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
           <CheckCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800 dark:text-blue-200">
