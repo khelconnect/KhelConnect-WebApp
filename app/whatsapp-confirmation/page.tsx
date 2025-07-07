@@ -238,18 +238,6 @@ export default function WhatsAppConfirmationPage() {
           </CardContent>
         </Card>
 
-        {/* Action Buttons */}
-        <div className="flex flex-col gap-4">
-          <Button
-            onClick={handleProceedToPayment}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base rounded-full"
-          >
-            <CreditCard className="mr-2 h-5 w-5" />
-            Proceed to Payment
-          </Button>
-
-        </div>
-
         {/* Navigation */}
         <div className="flex justify-center mt-4">
           <Button variant="outline" asChild className="py-6 px-8 rounded-full border-border">
