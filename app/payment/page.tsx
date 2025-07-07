@@ -1,18 +1,20 @@
-"use client"
+'use client'
 
 import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import Image from "next/image"
-import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle } from "lucide-react"
+import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { format, parse } from "date-fns"
 import { toast } from "@/hooks/use-toast"
+import Image from "next/image"
 
 export default function PaymentPage() {
   const searchParams = useSearchParams()
+  const [copied, setCopied] = useState(false)
+  const [showQRText, setShowQRText] = useState(false)
 
   const [bookingDetails, setBookingDetails] = useState({
     sport: "",
@@ -27,7 +29,7 @@ export default function PaymentPage() {
     customerPhone: "",
   })
 
-  const upiId = "khelconnect@paytm"
+  const upiId = "9674785422.etb@icici"
 
   useEffect(() => {
     setBookingDetails({
@@ -44,6 +46,51 @@ export default function PaymentPage() {
     })
   }, [searchParams])
 
+  const formatDate = (dateString: string) => {
+    if (!dateString) return ""
+    try {
+      const date = parse(dateString, "yyyy-MM-dd", new Date())
+      return format(date, "EEE, dd MMM yyyy")
+    } catch (error) {
+      return dateString
+    }
+  }
+
+  const slotArray = bookingDetails.slots
+    ? bookingDetails.slots.split(",").map((s) => s.trim())
+    : []
+
+  const handlePayAndCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(upiId)
+      toast({
+        title: "Copied!",
+        description: "UPI ID copied to clipboard",
+      })
+      setCopied(true)
+
+      const upiUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&am=${bookingDetails.price}&cu=INR&tn=Booking+ID:+${bookingDetails.bookingId}`
+      window.location.href = upiUrl
+
+      setTimeout(() => setCopied(false), 1000)
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Failed to copy UPI ID",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleWhatsAppSupport = () => {
+    const message = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}`
+    const encodedMessage = encodeURIComponent(message)
+    const whatsappUrl = `https://wa.me/919876543210?text=${encodedMessage}`
+    window.open(whatsappUrl, "_blank")
+  }
+
+  const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent)
+
   const sportNames = {
     football: "Football",
     cricket: "Cricket",
@@ -53,58 +100,82 @@ export default function PaymentPage() {
     basketball: "Basketball",
   }
 
-  const formatDate = (dateString: string) => {
-    try {
-      const date = parse(dateString, "yyyy-MM-dd", new Date())
-      return format(date, "EEE, dd MMM yyyy")
-    } catch {
-      return dateString
-    }
-  }
-
-  const formatTime = (time: string) => {
-    try {
-      const parsed = parse(time, "HH:mm", new Date())
-      return format(parsed, "hh:mm a")
-    } catch {
-      return time
-    }
-  }
-
-  const slotArray = bookingDetails.slots ? bookingDetails.slots.split(",") : []
-
-  const copyUpiId = async () => {
-    try {
-      await navigator.clipboard.writeText(upiId)
-      toast({ title: "Copied!", description: "UPI ID copied to clipboard" })
-    } catch {
-      toast({
-        title: "Error",
-        description: "Failed to copy UPI ID",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handlePayWithUPI = () => {
-    const intentUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&mc=0000&tid=${bookingDetails.bookingId}&tr=${bookingDetails.bookingId}&tn=KhelConnect%20Booking&am=${bookingDetails.price}&cu=INR`
-
-    if (typeof window !== "undefined") {
-      window.location.href = intentUrl
-    }
-  }
-
-  const handleWhatsAppSupport = () => {
-    const message = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}\n\nPlease assist me with the payment process.`
-    const whatsappUrl = `https://wa.me/919876543210?text=${encodeURIComponent(message)}`
-    window.open(whatsappUrl, "_blank")
-  }
-
   return (
     <main className="container mx-auto px-6 py-12">
       <div className="max-w-2xl mx-auto">
-        {/* ... unchanged content ... */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-full mb-4">
+            <CreditCard className="h-8 w-8 text-primary-foreground" />
+          </div>
+          <h1 className="text-3xl font-bold mb-2">Complete Payment</h1>
+          <p className="text-muted-foreground">Secure your booking by completing the payment</p>
+        </div>
 
+        {/* UPI Payment Section */}
+        <Card className="mb-6 rounded-3xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" />
+              Pay with UPI
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* QR Code */}
+            <div className="flex justify-center">
+              <div
+                className="relative group p-2 bg-white rounded-xl shadow-lg cursor-pointer text-center transition-all"
+                onClick={isMobile ? handlePayAndCopy : undefined}
+                onMouseEnter={() => setShowQRText(true)}
+                onMouseLeave={() => setShowQRText(false)}
+              >
+                <div className="w-48 h-48 rounded-xl overflow-hidden flex items-center justify-center bg-white">
+                  {showQRText ? (
+                    <div className="w-full h-full flex items-center justify-center text-sm font-medium text-primary text-center px-2">
+                      Please scan this QR with your mobile device
+                    </div>
+                  ) : (
+                    <Image
+                      src="/assets/khelconnect_qr.jpeg"
+                      alt="KhelConnect QR"
+                      width={192}
+                      height={192}
+                      className="rounded-xl object-contain"
+                    />
+                  )}
+                </div>
+                <p className="text-xs text-center text-gray-500 mt-2">Tap to open UPI App</p>
+              </div>
+            </div>
+
+            {/* UPI ID */}
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground text-center">Or pay directly using UPI ID:</p>
+              <div
+                className="flex items-center gap-2 p-3 bg-secondary rounded-xl"
+                onClick={isMobile ? handlePayAndCopy : undefined}
+              >
+                <span className="flex-1 font-mono text-center cursor-pointer">{upiId}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handlePayAndCopy()
+                  }}
+                  className="shrink-0 bg-transparent"
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-600 transition-transform scale-110 duration-200" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Booking Summary */}
         <Card className="mb-6 rounded-3xl">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
@@ -124,7 +195,8 @@ export default function PaymentPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Sport & Turf:</span>
                 <span>
-                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} - {bookingDetails.turfName}
+                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} -{" "}
+                  {bookingDetails.turfName}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -134,7 +206,9 @@ export default function PaymentPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Time:</span>
                 <span>
-                  {formatTime(slotArray[0])} - {formatTime(slotArray[slotArray.length - 1])}
+                  {slotArray.length > 1
+                    ? `${slotArray[0]} - ${slotArray[slotArray.length - 1]}`
+                    : slotArray[0]}
                 </span>
               </div>
               <div className="flex justify-between items-center pt-3 border-t">
@@ -145,7 +219,7 @@ export default function PaymentPage() {
           </CardContent>
         </Card>
 
-        {/* Instructions */}
+        {/* Payment Instructions */}
         <Alert className="mb-6 border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
           <CheckCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800 dark:text-blue-200">

@@ -1,21 +1,35 @@
-'use client'
+"use client"
 
 import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle, Check } from "lucide-react"
+import {
+  MessageCircle,
+  CheckCircle,
+  Home,
+  Calendar,
+  Clock,
+  MapPin,
+  User,
+  Phone,
+  CreditCard,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { format, parse } from "date-fns"
-import { toast } from "@/hooks/use-toast"
-import Image from "next/image"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabaseClient"
 
-export default function PaymentPage() {
+interface TimeSlot {
+  id: string
+  start_time: string
+  end_time: string
+}
+
+export default function WhatsAppConfirmationPage() {
   const searchParams = useSearchParams()
-  const [copied, setCopied] = useState(false)
-  const [showQRText, setShowQRText] = useState(false)
-
+  const router = useRouter()
   const [bookingDetails, setBookingDetails] = useState({
     sport: "",
     turfId: "",
@@ -29,69 +43,41 @@ export default function PaymentPage() {
     customerPhone: "",
   })
 
-  const upiId = "9674785422.etb@icici"
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([])
+
+  // Fetch all time slots
+  useEffect(() => {
+    ;(async () => {
+      const { data, error } = await supabase
+        .from("time_slots")
+        .select("id, start_time, end_time")
+      if (!error && data) setTimeSlots(data)
+    })()
+  }, [])
 
   useEffect(() => {
-    setBookingDetails({
-      sport: searchParams.get("sport") || "",
-      turfId: searchParams.get("turfId") || "",
-      turfName: searchParams.get("turfName") || "",
-      date: searchParams.get("date") || "",
-      slots: searchParams.get("slots") || "",
-      price: searchParams.get("price") || "",
-      bookingId: searchParams.get("bookingId") || "",
-      customerName: searchParams.get("customerName") || "",
-      customerEmail: searchParams.get("customerEmail") || "",
-      customerPhone: searchParams.get("customerPhone") || "",
+    const keys = [
+      "sport",
+      "turfId",
+      "turfName",
+      "date",
+      "slots",
+      "price",
+      "bookingId",
+      "customerName",
+      "customerEmail",
+      "customerPhone",
+    ] as const
+    const updated: any = {}
+    keys.forEach((k) => {
+      updated[k] = searchParams.get(k) || ""
     })
+    setBookingDetails(updated)
   }, [searchParams])
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return ""
-    try {
-      const date = parse(dateString, "yyyy-MM-dd", new Date())
-      return format(date, "EEE, dd MMM yyyy")
-    } catch (error) {
-      return dateString
-    }
-  }
+  const slotArray = bookingDetails.slots ? bookingDetails.slots.split(",") : []
 
-  const slotArray = bookingDetails.slots
-    ? bookingDetails.slots.split(",").map((s) => s.trim())
-    : []
-
-  const handlePayAndCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(upiId)
-      toast({
-        title: "Copied!",
-        description: "UPI ID copied to clipboard",
-      })
-      setCopied(true)
-
-      const upiUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&am=${bookingDetails.price}&cu=INR&tn=Booking+ID:+${bookingDetails.bookingId}`
-      window.location.href = upiUrl
-
-      setTimeout(() => setCopied(false), 1000)
-    } catch (err) {
-      toast({
-        title: "Error",
-        description: "Failed to copy UPI ID",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handleWhatsAppSupport = () => {
-    const message = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}`
-    const encodedMessage = encodeURIComponent(message)
-    const whatsappUrl = `https://wa.me/919876543210?text=${encodedMessage}`
-    window.open(whatsappUrl, "_blank")
-  }
-
-  const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent)
-
-  const sportNames = {
+  const sportNames: Record<string, string> = {
     football: "Football",
     cricket: "Cricket",
     pickleball: "Pickleball",
@@ -100,165 +86,166 @@ export default function PaymentPage() {
     basketball: "Basketball",
   }
 
+  const formatDate = (dateString: string) => {
+    try {
+      const date = parse(dateString, "yyyy-MM-dd", new Date())
+      return format(date, "EEE, dd MMM yyyy")
+    } catch {
+      return dateString
+    }
+  }
+
+  const handleProceedToPayment = () => {
+    const params = new URLSearchParams()
+    Object.entries(bookingDetails).forEach(([k, v]) => {
+      if (v) params.set(k, v)
+    })
+    router.push(`/payment?${params.toString()}`)
+  }
+
   return (
     <main className="container mx-auto px-6 py-12">
       <div className="max-w-2xl mx-auto">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-full mb-4">
-            <CreditCard className="h-8 w-8 text-primary-foreground" />
+        <div className="text-center mb-12">
+          <div className="flex items-center justify-center w-20 h-20 bg-green-500 rounded-full mb-6">
+            <MessageCircle className="h-10 w-10 text-white" />
           </div>
-          <h1 className="text-3xl font-bold mb-2">Complete Payment</h1>
-          <p className="text-muted-foreground">Secure your booking by completing the payment</p>
-        </div>
-
-        {/* UPI Payment Section */}
-        <Card className="mb-6 rounded-3xl">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <QrCode className="h-5 w-5" />
-              Pay with UPI
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* QR Code */}
-            <div className="flex justify-center">
-              <div
-                className="relative group p-2 bg-white rounded-xl shadow-lg cursor-pointer text-center transition-all"
-                onClick={isMobile ? handlePayAndCopy : undefined}
-                onMouseEnter={() => setShowQRText(true)}
-                onMouseLeave={() => setShowQRText(false)}
-              >
-                <div className="w-48 h-48 rounded-xl overflow-hidden flex items-center justify-center bg-white">
-                  {showQRText ? (
-                    <div className="w-full h-full flex items-center justify-center text-sm font-medium text-primary text-center px-2">
-                      Please scan this QR with your mobile device
-                    </div>
-                  ) : (
-                    <Image
-                      src="/assets/khelconnect_qr.jpeg"
-                      alt="KhelConnect QR"
-                      width={192}
-                      height={192}
-                      className="rounded-xl object-contain"
-                    />
-                  )}
-                </div>
-                <p className="text-xs text-center text-gray-500 mt-2">Tap to open UPI App</p>
-              </div>
-            </div>
-
-            {/* UPI ID */}
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground text-center">Or pay directly using UPI ID:</p>
-              <div
-                className="flex items-center gap-2 p-3 bg-secondary rounded-xl"
-                onClick={isMobile ? handlePayAndCopy : undefined}
-              >
-                <span className="flex-1 font-mono text-center cursor-pointer">{upiId}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handlePayAndCopy()
-                  }}
-                  className="shrink-0 bg-transparent"
-                >
-                  {copied ? (
-                    <Check className="h-4 w-4 text-green-600 transition-transform scale-110 duration-200" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Booking Summary */}
-        <Card className="mb-6 rounded-3xl">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Booking Details</span>
-              <Badge className="bg-orange-500 text-white">
-                <AlertCircle className="h-4 w-4 mr-1" />
-                Payment Pending
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Booking ID:</span>
-                <span className="font-mono">{bookingDetails.bookingId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Sport & Turf:</span>
-                <span>
-                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} -{" "}
-                  {bookingDetails.turfName}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Date:</span>
-                <span>{formatDate(bookingDetails.date)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Time:</span>
-                <span>
-                  {slotArray.length > 1
-                    ? `${slotArray[0]} - ${slotArray[slotArray.length - 1]}`
-                    : slotArray[0]}
-                </span>
-              </div>
-              <div className="flex justify-between items-center pt-3 border-t">
-                <span className="text-lg font-semibold">Total Amount:</span>
-                <span className="text-2xl font-bold text-primary">₹{bookingDetails.price}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Payment Instructions */}
-        <Alert className="mb-6 border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
-          <CheckCircle className="h-4 w-4 text-blue-600" />
-          <AlertDescription className="text-blue-800 dark:text-blue-200">
-            <strong>Payment Instructions:</strong>
-            <ul className="mt-2 space-y-1 text-sm">
-              <li>• Scan the QR code with any UPI app (GPay, PhonePe, Paytm, etc.)</li>
-              <li>• Or copy the UPI ID and make payment manually</li>
-              <li>• Enter the exact amount: ₹{bookingDetails.price}</li>
-              <li>• Add your booking ID ({bookingDetails.bookingId}) in payment remarks</li>
-            </ul>
-          </AlertDescription>
-        </Alert>
-
-        {/* WhatsApp Support */}
-        <Card className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 rounded-3xl">
-          <CardContent className="p-6">
-            <div className="text-center">
-              <h3 className="font-semibold text-red-800 dark:text-red-200 mb-2">Problem with Payment?</h3>
-              <p className="text-red-700 dark:text-red-300 text-sm mb-4">
-                Having trouble with the payment process? Our support team is here to help!
-              </p>
-              <Button
-                onClick={handleWhatsAppSupport}
-                className="bg-green-500 hover:bg-green-600 text-white rounded-full"
-              >
-                <MessageCircle className="mr-2 h-4 w-4" />
-                Chat with WhatsApp Support
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="mt-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Payment issues? Call us at{" "}
-            <a href="tel:+919876543210" className="text-primary hover:underline">
-              +91 98765 43210
-            </a>
+          <h1 className="text-3xl font-bold mb-4">Booking Request Submitted!</h1>
+          <p className="text-lg text-muted-foreground">
+            We’ve sent a confirmation to your WhatsApp. Please check it for payment instructions.
           </p>
+        </div>
+        {/* Proceed to Payment */}
+        <div className="flex flex-col gap-4">
+          <Button
+            onClick={handleProceedToPayment}
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base rounded-full"
+          >
+            <CreditCard className="mr-2 h-5 w-5" />
+            Proceed to Payment
+          </Button>
+
+        </div>
+        {/* Summary Card */}
+        <Card className="mb-8 shadow-lg bg-card border-border rounded-3xl">
+          <CardContent className="p-8 space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold">Booking Summary</h2>
+              <Badge className="bg-green-500 text-white px-3 py-1.5 rounded-full">
+                <CheckCircle className="h-4 w-4 mr-1.5" />
+                Submitted
+              </Badge>
+            </div>
+
+            {/* Customer */}
+            <div className="flex items-center gap-3">
+              <User className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Customer</p>
+                <p className="font-medium">{bookingDetails.customerName}</p>
+              </div>
+            </div>
+
+            {/* Turf & Sport */}
+            <div className="flex items-center gap-3">
+              <MapPin className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Turf & Sport</p>
+                <p className="font-medium">
+                  {sportNames[bookingDetails.sport] || bookingDetails.sport} –{" "}
+                  {bookingDetails.turfName}
+                </p>
+              </div>
+            </div>
+
+            {/* Date */}
+            <div className="flex items-center gap-3">
+              <Calendar className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Date</p>
+                <p className="font-medium">{formatDate(bookingDetails.date)}</p>
+              </div>
+            </div>
+
+            {/* Slots */}
+            <div className="flex items-center gap-3">
+              <Clock className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Time Slots</p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {slotArray.map((slotId) => {
+                    const slot = timeSlots.find((s) => s.id === slotId)
+                    const label = slot
+                      ? `${slot.start_time}–${slot.end_time}`
+                      : slotId
+                    return (
+                      <Badge key={slotId} variant="outline" className="text-xs">
+                        {label}
+                      </Badge>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Contact */}
+            <div className="flex items-center gap-3">
+              <Phone className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Contact</p>
+                <p className="font-medium">{bookingDetails.customerPhone}</p>
+                <p className="text-sm text-muted-foreground">
+                  {bookingDetails.customerEmail}
+                </p>
+              </div>
+            </div>
+
+            {/* Booking ID & Price */}
+            <div className="mt-6 pt-6 border-t border-border flex justify-between items-center">
+              <div>
+                <p className="text-sm text-muted-foreground">Booking ID</p>
+                <p className="font-mono font-medium">
+                  {bookingDetails.bookingId}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-muted-foreground">Total Amount</p>
+                <p className="text-2xl font-bold text-primary">
+                  ₹{bookingDetails.price}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Next Steps */}
+        <Card className="mb-8 bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 rounded-3xl">
+          <CardContent className="p-8">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <MessageCircle className="h-6 w-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Next Steps</h3>
+                <div className="space-y-2 text-green-700 dark:text-green-300">
+                  <p>1. You will receive a WhatsApp message shortly with your booking details</p>
+                  <p>2. Our team will confirm availability and share payment details</p>
+                  <p>3. Complete payment via UPI/WhatsApp Pay to secure your booking</p>
+                  <p>4. Receive final confirmation with venue details</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Navigation */}
+        <div className="flex justify-center mt-4">
+          <Button variant="outline" asChild className="py-6 px-8 rounded-full border-border">
+            <Link href="/">
+              <Home className="mr-2 h-5 w-5" />
+              Back to Home
+            </Link>
+          </Button>
         </div>
       </div>
     </main>
