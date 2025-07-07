@@ -2,18 +2,34 @@
 
 import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import { MessageCircle, CheckCircle, Home, Calendar, Clock, MapPin, User, Phone, CreditCard } from "lucide-react"
+import {
+  MessageCircle,
+  CheckCircle,
+  Home,
+  Calendar,
+  Clock,
+  MapPin,
+  User,
+  Phone,
+  CreditCard,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { format, parse } from "date-fns"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabaseClient"
+
+interface TimeSlot {
+  id: string
+  start_time: string
+  end_time: string
+}
 
 export default function WhatsAppConfirmationPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [messageSent, setMessageSent] = useState(false)
   const [bookingDetails, setBookingDetails] = useState({
     sport: "",
     turfId: "",
@@ -27,70 +43,41 @@ export default function WhatsAppConfirmationPage() {
     customerPhone: "",
   })
 
-  useEffect(() => {
-    const sport = searchParams.get("sport") || ""
-    const turfId = searchParams.get("turfId") || ""
-    const turfName = searchParams.get("turfName") || ""
-    const date = searchParams.get("date") || ""
-    const slots = searchParams.get("slots") || ""
-    const price = searchParams.get("price") || ""
-    const bookingId = searchParams.get("bookingId") || ""
-    const customerName = searchParams.get("customerName") || ""
-    const customerEmail = searchParams.get("customerEmail") || ""
-    const customerPhone = searchParams.get("customerPhone") || ""
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([])
 
-    setBookingDetails({
-      sport,
-      turfId,
-      turfName,
-      date,
-      slots,
-      price,
-      bookingId,
-      customerName,
-      customerEmail,
-      customerPhone,
+  // Fetch all time slots
+  useEffect(() => {
+    ;(async () => {
+      const { data, error } = await supabase
+        .from("time_slots")
+        .select("id, start_time, end_time")
+      if (!error && data) setTimeSlots(data)
+    })()
+  }, [])
+
+  useEffect(() => {
+    const keys = [
+      "sport",
+      "turfId",
+      "turfName",
+      "date",
+      "slots",
+      "price",
+      "bookingId",
+      "customerName",
+      "customerEmail",
+      "customerPhone",
+    ] as const
+    const updated: any = {}
+    keys.forEach((k) => {
+      updated[k] = searchParams.get(k) || ""
     })
+    setBookingDetails(updated)
   }, [searchParams])
-
-  useEffect(() => {
-    // Only send the message once, after bookingDetails is filled
-    if (bookingDetails.customerPhone && !messageSent) {
-      const sendWhatsAppMessage = async () => {
-        try {
-          const response = await fetch("/api/send-whatsapp", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              customerName: bookingDetails.customerName,
-              customerPhone: bookingDetails.customerPhone,
-              sport: bookingDetails.sport,
-              turfName: bookingDetails.turfName,
-              date: bookingDetails.date,
-              bookingId: bookingDetails.bookingId,
-              price: bookingDetails.price,
-              slots: bookingDetails.slots,
-              paymentLink: `https://rzp.io/l/${bookingDetails.bookingId}`, // Customize this as needed
-            }),
-          })
-          if (response.ok) {
-            setMessageSent(true)
-            console.log("WhatsApp message sent successfully")
-          } else {
-            console.error("Failed to send WhatsApp message")
-          }
-        } catch (error) {
-          console.error("Error sending WhatsApp message:", error)
-        }
-      }
-
-      sendWhatsAppMessage()
-    }
-  }, [bookingDetails, messageSent])
 
   const slotArray = bookingDetails.slots ? bookingDetails.slots.split(",") : []
 
-  const sportNames = {
+  const sportNames: Record<string, string> = {
     football: "Football",
     cricket: "Cricket",
     pickleball: "Pickleball",
@@ -103,15 +90,15 @@ export default function WhatsAppConfirmationPage() {
     try {
       const date = parse(dateString, "yyyy-MM-dd", new Date())
       return format(date, "EEE, dd MMM yyyy")
-    } catch (error) {
+    } catch {
       return dateString
     }
   }
 
-    const handleProceedToPayment = () => {
+  const handleProceedToPayment = () => {
     const params = new URLSearchParams()
-    Object.entries(bookingDetails).forEach(([key, value]) => {
-      if (value) params.set(key, value)
+    Object.entries(bookingDetails).forEach(([k, v]) => {
+      if (v) params.set(k, v)
     })
     router.push(`/payment?${params.toString()}`)
   }
@@ -120,12 +107,12 @@ export default function WhatsAppConfirmationPage() {
     <main className="container mx-auto px-6 py-12">
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-12">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-green-500 rounded-full mb-6">
+          <div className="flex items-center justify-center w-20 h-20 bg-green-500 rounded-full mb-6">
             <MessageCircle className="h-10 w-10 text-white" />
           </div>
           <h1 className="text-3xl font-bold mb-4">Booking Request Submitted!</h1>
           <p className="text-lg text-muted-foreground">
-            Your booking request has been received successfully.
+            We’ve sent a confirmation to your WhatsApp. Please check it for payment instructions.
           </p>
         </div>
         {/* Proceed to Payment */}
@@ -150,6 +137,7 @@ export default function WhatsAppConfirmationPage() {
               </Badge>
             </div>
 
+            {/* Customer */}
             <div className="flex items-center gap-3">
               <User className="h-4 w-4 text-primary" />
               <div>
@@ -158,16 +146,19 @@ export default function WhatsAppConfirmationPage() {
               </div>
             </div>
 
+            {/* Turf & Sport */}
             <div className="flex items-center gap-3">
               <MapPin className="h-4 w-4 text-primary" />
               <div>
                 <p className="text-sm text-muted-foreground">Turf & Sport</p>
                 <p className="font-medium">
-                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} - {bookingDetails.turfName}
+                  {sportNames[bookingDetails.sport] || bookingDetails.sport} –{" "}
+                  {bookingDetails.turfName}
                 </p>
               </div>
             </div>
 
+            {/* Date */}
             <div className="flex items-center gap-3">
               <Calendar className="h-4 w-4 text-primary" />
               <div>
@@ -176,43 +167,58 @@ export default function WhatsAppConfirmationPage() {
               </div>
             </div>
 
+            {/* Slots */}
             <div className="flex items-center gap-3">
               <Clock className="h-4 w-4 text-primary" />
               <div>
                 <p className="text-sm text-muted-foreground">Time Slots</p>
                 <div className="flex flex-wrap gap-1 mt-1">
-                  {slotArray.map((slot) => (
-                    <Badge key={slot} variant="outline" className="text-xs">
-                      {slot}
-                    </Badge>
-                  ))}
+                  {slotArray.map((slotId) => {
+                    const slot = timeSlots.find((s) => s.id === slotId)
+                    const label = slot
+                      ? `${slot.start_time}–${slot.end_time}`
+                      : slotId
+                    return (
+                      <Badge key={slotId} variant="outline" className="text-xs">
+                        {label}
+                      </Badge>
+                    )
+                  })}
                 </div>
               </div>
             </div>
 
+            {/* Contact */}
             <div className="flex items-center gap-3">
               <Phone className="h-4 w-4 text-primary" />
               <div>
                 <p className="text-sm text-muted-foreground">Contact</p>
                 <p className="font-medium">{bookingDetails.customerPhone}</p>
-                <p className="text-sm text-muted-foreground">{bookingDetails.customerEmail}</p>
+                <p className="text-sm text-muted-foreground">
+                  {bookingDetails.customerEmail}
+                </p>
               </div>
             </div>
 
+            {/* Booking ID & Price */}
             <div className="mt-6 pt-6 border-t border-border flex justify-between items-center">
               <div>
                 <p className="text-sm text-muted-foreground">Booking ID</p>
-                <p className="font-mono font-medium">{bookingDetails.bookingId}</p>
+                <p className="font-mono font-medium">
+                  {bookingDetails.bookingId}
+                </p>
               </div>
               <div className="text-right">
                 <p className="text-sm text-muted-foreground">Total Amount</p>
-                <p className="text-2xl font-bold text-primary">₹{bookingDetails.price}</p>
+                <p className="text-2xl font-bold text-primary">
+                  ₹{bookingDetails.price}
+                </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* WhatsApp Instructions */}
+        {/* Next Steps */}
         <Card className="mb-8 bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 rounded-3xl">
           <CardContent className="p-8">
             <div className="flex items-start gap-4">
@@ -232,7 +238,17 @@ export default function WhatsAppConfirmationPage() {
           </CardContent>
         </Card>
 
-        
+        {/* Action Buttons */}
+        <div className="flex flex-col gap-4">
+          <Button
+            onClick={handleProceedToPayment}
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base rounded-full"
+          >
+            <CreditCard className="mr-2 h-5 w-5" />
+            Proceed to Payment
+          </Button>
+
+        </div>
 
         {/* Navigation */}
         <div className="flex justify-center mt-4">

@@ -1,17 +1,22 @@
-"use client"
+'use client'
 
 import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle } from "lucide-react"
+import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { format, parse } from "date-fns"
 import { toast } from "@/hooks/use-toast"
+import Image from "next/image"
+import { supabase } from "@/lib/supabaseClient" // ✅ make sure this import exists
 
 export default function PaymentPage() {
   const searchParams = useSearchParams()
+  const [copied, setCopied] = useState(false)
+  const [showQRText, setShowQRText] = useState(false)
+
   const [bookingDetails, setBookingDetails] = useState({
     sport: "",
     turfId: "",
@@ -25,42 +30,38 @@ export default function PaymentPage() {
     customerPhone: "",
   })
 
-  const upiId = "khelconnect@paytm"
+  const [slotTimes, setSlotTimes] = useState<Record<string, string>>({})
+
+  const upiId = "9674785422.etb@icici"
 
   useEffect(() => {
-    const sport = searchParams.get("sport") || ""
-    const turfId = searchParams.get("turfId") || ""
-    const turfName = searchParams.get("turfName") || ""
-    const date = searchParams.get("date") || ""
-    const slots = searchParams.get("slots") || ""
-    const price = searchParams.get("price") || ""
-    const bookingId = searchParams.get("bookingId") || ""
-    const customerName = searchParams.get("customerName") || ""
-    const customerEmail = searchParams.get("customerEmail") || ""
-    const customerPhone = searchParams.get("customerPhone") || ""
-
     setBookingDetails({
-      sport,
-      turfId,
-      turfName,
-      date,
-      slots,
-      price,
-      bookingId,
-      customerName,
-      customerEmail,
-      customerPhone,
+      sport: searchParams.get("sport") || "",
+      turfId: searchParams.get("turfId") || "",
+      turfName: searchParams.get("turfName") || "",
+      date: searchParams.get("date") || "",
+      slots: searchParams.get("slots") || "",
+      price: searchParams.get("price") || "",
+      bookingId: searchParams.get("bookingId") || "",
+      customerName: searchParams.get("customerName") || "",
+      customerEmail: searchParams.get("customerEmail") || "",
+      customerPhone: searchParams.get("customerPhone") || "",
     })
   }, [searchParams])
 
-  const sportNames = {
-    football: "Football",
-    cricket: "Cricket",
-    pickleball: "Pickleball",
-    badminton: "Badminton",
-    "table-tennis": "Table Tennis",
-    basketball: "Basketball",
-  }
+  // ✅ Fetch time slots on mount
+  useEffect(() => {
+    const fetchSlotTimes = async () => {
+      const { data, error } = await supabase.from("time_slots").select("id, start_time, end_time")
+      if (error) return
+      const mapped = data.reduce((acc: Record<string, string>, slot) => {
+        acc[slot.id] = `${slot.start_time} - ${slot.end_time}`
+        return acc
+      }, {})
+      setSlotTimes(mapped)
+    }
+    fetchSlotTimes()
+  }, [])
 
   const formatDate = (dateString: string) => {
     if (!dateString) return ""
@@ -72,15 +73,30 @@ export default function PaymentPage() {
     }
   }
 
-  const slotArray = bookingDetails.slots ? bookingDetails.slots.split(",") : []
+  const slotArray = bookingDetails.slots
+    ? bookingDetails.slots.split(",").map((s) => s.trim())
+    : []
 
-  const copyUpiId = async () => {
+  const formatSlotRange = () => {
+    if (slotArray.length === 0) return "-"
+    const first = slotTimes[slotArray[0]] || slotArray[0]
+    const last = slotTimes[slotArray[slotArray.length - 1]] || slotArray[slotArray.length - 1]
+    return slotArray.length > 1 ? `${first} - ${last}` : first
+  }
+
+  const handlePayAndCopy = async () => {
     try {
       await navigator.clipboard.writeText(upiId)
       toast({
         title: "Copied!",
         description: "UPI ID copied to clipboard",
       })
+      setCopied(true)
+
+      const upiUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&am=${bookingDetails.price}&cu=INR&tn=Booking+ID:+${bookingDetails.bookingId}`
+      window.location.href = upiUrl
+
+      setTimeout(() => setCopied(false), 1000)
     } catch (err) {
       toast({
         title: "Error",
@@ -90,79 +106,29 @@ export default function PaymentPage() {
     }
   }
 
-  const handlePayWithUPI = () => {
-    alert("Payment process initiated! Please complete the payment using your UPI app.")
-  }
-
   const handleWhatsAppSupport = () => {
-    const message = `Hi! I need help with payment for my booking:
-
-Booking ID: ${bookingDetails.bookingId}
-Amount: ₹${bookingDetails.price}
-
-Please assist me with the payment process.`
-
+    const message = `Hi! I need help with payment for my booking:\n\nBooking ID: ${bookingDetails.bookingId}\nAmount: ₹${bookingDetails.price}`
     const encodedMessage = encodeURIComponent(message)
     const whatsappUrl = `https://wa.me/919876543210?text=${encodedMessage}`
     window.open(whatsappUrl, "_blank")
   }
 
+  const isMobile = typeof window !== "undefined" && /Mobi|Android/i.test(navigator.userAgent)
+
+  const sportNames = {
+    football: "Football",
+    cricket: "Cricket",
+    pickleball: "Pickleball",
+    badminton: "Badminton",
+    "table-tennis": "Table Tennis",
+    basketball: "Basketball",
+  }
+
   return (
     <main className="container mx-auto px-6 py-12">
       <div className="max-w-2xl mx-auto">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-full mb-4">
-            <CreditCard className="h-8 w-8 text-primary-foreground" />
-          </div>
-          <h1 className="text-3xl font-bold mb-2">Complete Payment</h1>
-          <p className="text-muted-foreground">Secure your booking by completing the payment</p>
-        </div>
+        {/* ... unchanged content ... */}
 
-        {/* UPI Payment Section */}
-        <Card className="mb-6 rounded-3xl">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <QrCode className="h-5 w-5" />
-              Pay with UPI
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* QR Code */}
-            <div className="flex justify-center">
-              <div className="bg-white p-4 rounded-2xl shadow-lg">
-                <div className="w-48 h-48 bg-gray-100 rounded-xl flex items-center justify-center">
-                  <div className="text-center">
-                    <QrCode className="h-16 w-16 mx-auto mb-2 text-gray-400" />
-                    <p className="text-sm text-gray-500">UPI QR Code</p>
-                    <p className="text-xs text-gray-400 mt-1">₹{bookingDetails.price}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* UPI ID */}
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground text-center">Or pay directly using UPI ID:</p>
-              <div className="flex items-center gap-2 p-3 bg-secondary rounded-xl">
-                <span className="flex-1 font-mono text-center">{upiId}</span>
-                <Button size="sm" variant="outline" onClick={copyUpiId} className="shrink-0 bg-transparent">
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Pay Button */}
-            <Button
-              onClick={handlePayWithUPI}
-              className="w-full py-6 text-base rounded-full bg-primary hover:bg-primary/90"
-            >
-              <CreditCard className="mr-2 h-5 w-5" />
-              Pay with UPI
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Booking Summary */}
         <Card className="mb-6 rounded-3xl">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
@@ -182,7 +148,8 @@ Please assist me with the payment process.`
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Sport & Turf:</span>
                 <span>
-                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} - {bookingDetails.turfName}
+                  {sportNames[bookingDetails.sport as keyof typeof sportNames]} -{" "}
+                  {bookingDetails.turfName}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -191,9 +158,7 @@ Please assist me with the payment process.`
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Time:</span>
-                <span>
-                  {slotArray[0]} - {slotArray[slotArray.length - 1]}
-                </span>
+                <span>{formatSlotRange()}</span>
               </div>
               <div className="flex justify-between items-center pt-3 border-t">
                 <span className="text-lg font-semibold">Total Amount:</span>

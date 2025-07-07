@@ -125,16 +125,19 @@ export default function BookingPage() {
   const handleConfirmBooking = async (customUserId?: string) => {
   if (!selectedDate || selectedSlots.length === 0) return;
 
-  const { data, error } = await supabase
-    .from("bookings")
-    .insert({
-      turf_id: turfId,
-      date: formattedDate,
-      slot: selectedSlots,
-      user_id: customUserId || userId || "00000000-0000-0000-0000-000000000000",
-    })
-    .select()
-    .single();
+const { data, error } = await supabase
+  .from("bookings")
+  .insert({
+    turf_id: turfId,
+    date: formattedDate,
+    slot: selectedSlots,
+    user_id: customUserId || userId || "00000000-0000-0000-0000-000000000000",
+    payment_status: "pending",   // default
+    status: "pending",           // default
+  })
+  .select()
+  .single();
+
 
   if (!error && data) {
     const bookingId = Math.random().toString(36).substring(2, 10).toUpperCase();
