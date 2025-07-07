@@ -107,12 +107,12 @@ export default function WhatsAppConfirmationPage() {
     <main className="container mx-auto px-6 py-12">
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-12">
-          <div className="flex items-center justify-center w-20 h-20 bg-green-500 rounded-full mb-6">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-green-500 rounded-full mb-6">
             <MessageCircle className="h-10 w-10 text-white" />
           </div>
           <h1 className="text-3xl font-bold mb-4">Booking Request Submitted!</h1>
           <p className="text-lg text-muted-foreground">
-            We’ve sent a confirmation to your WhatsApp. Please check it for payment instructions.
+            Please check your WhatsApp for booking confirmation and payment details.
           </p>
         </div>
         {/* Proceed to Payment */}
@@ -124,7 +124,7 @@ export default function WhatsAppConfirmationPage() {
             <CreditCard className="mr-2 h-5 w-5" />
             Proceed to Payment
           </Button>
-
+          <br />
         </div>
         {/* Summary Card */}
         <Card className="mb-8 shadow-lg bg-card border-border rounded-3xl">
