@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { format, parse } from "date-fns"
 import { toast } from "@/hooks/use-toast"
 import Image from "next/image"
+import { supabase } from "@/lib/supabaseClient" // ✅ make sure this import exists
 
 export default function PaymentPage() {
   const searchParams = useSearchParams()
@@ -29,6 +30,8 @@ export default function PaymentPage() {
     customerPhone: "",
   })
 
+  const [slotTimes, setSlotTimes] = useState<Record<string, string>>({})
+
   const upiId = "9674785422.etb@icici"
 
   useEffect(() => {
@@ -46,6 +49,20 @@ export default function PaymentPage() {
     })
   }, [searchParams])
 
+  // ✅ Fetch time slots on mount
+  useEffect(() => {
+    const fetchSlotTimes = async () => {
+      const { data, error } = await supabase.from("time_slots").select("id, start_time, end_time")
+      if (error) return
+      const mapped = data.reduce((acc: Record<string, string>, slot) => {
+        acc[slot.id] = `${slot.start_time} - ${slot.end_time}`
+        return acc
+      }, {})
+      setSlotTimes(mapped)
+    }
+    fetchSlotTimes()
+  }, [])
+
   const formatDate = (dateString: string) => {
     if (!dateString) return ""
     try {
@@ -59,6 +76,13 @@ export default function PaymentPage() {
   const slotArray = bookingDetails.slots
     ? bookingDetails.slots.split(",").map((s) => s.trim())
     : []
+
+  const formatSlotRange = () => {
+    if (slotArray.length === 0) return "-"
+    const first = slotTimes[slotArray[0]] || slotArray[0]
+    const last = slotTimes[slotArray[slotArray.length - 1]] || slotArray[slotArray.length - 1]
+    return slotArray.length > 1 ? `${first} - ${last}` : first
+  }
 
   const handlePayAndCopy = async () => {
     try {
@@ -176,6 +200,7 @@ export default function PaymentPage() {
         </Card>
 
         {/* Booking Summary */}
+
         <Card className="mb-6 rounded-3xl">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
@@ -205,11 +230,7 @@ export default function PaymentPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Time:</span>
-                <span>
-                  {slotArray.length > 1
-                    ? `${slotArray[0]} - ${slotArray[slotArray.length - 1]}`
-                    : slotArray[0]}
-                </span>
+                <span>{formatSlotRange()}</span>
               </div>
               <div className="flex justify-between items-center pt-3 border-t">
                 <span className="text-lg font-semibold">Total Amount:</span>
@@ -219,7 +240,7 @@ export default function PaymentPage() {
           </CardContent>
         </Card>
 
-        {/* Payment Instructions */}
+       {/* Payment Instructions */}
         <Alert className="mb-6 border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
           <CheckCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800 dark:text-blue-200">
