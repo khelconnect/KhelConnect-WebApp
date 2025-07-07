@@ -127,8 +127,76 @@ export default function PaymentPage() {
   return (
     <main className="container mx-auto px-6 py-12">
       <div className="max-w-2xl mx-auto">
-        {/* ... unchanged content ... */}
+                <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-full mb-4">
+            <CreditCard className="h-8 w-8 text-primary-foreground" />
+          </div>
+          <h1 className="text-3xl font-bold mb-2">Complete Payment</h1>
+          <p className="text-muted-foreground">Secure your booking by completing the payment</p>
+        </div>
+        {/* UPI Payment Section */}
+        <Card className="mb-6 rounded-3xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5" />
+              Pay with UPI
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* QR Code */}
+            <div className="flex justify-center">
+              <div
+                className="relative group p-2 bg-white rounded-xl shadow-lg cursor-pointer text-center transition-all"
+                onClick={isMobile ? handlePayAndCopy : undefined}
+                onMouseEnter={() => setShowQRText(true)}
+                onMouseLeave={() => setShowQRText(false)}
+              >
+                <div className="w-48 h-48 rounded-xl overflow-hidden flex items-center justify-center bg-white">
+                  {showQRText ? (
+                    <div className="w-full h-full flex items-center justify-center text-sm font-medium text-primary text-center px-2">
+                      Please scan this QR with your mobile device
+                    </div>
+                  ) : (
+                    <Image
+                      src="/assets/khelconnect_qr.jpeg"
+                      alt="KhelConnect QR"
+                      width={192}
+                      height={192}
+                      className="rounded-xl object-contain"
+                    />
+                  )}
+                </div>
+                <p className="text-xs text-center text-gray-500 mt-2">Tap to open UPI App</p>
+              </div>
+            </div>
 
+            {/* UPI ID */}
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground text-center">Or pay directly using UPI ID:</p>
+              <div
+                className="flex items-center gap-2 p-3 bg-secondary rounded-xl"
+                onClick={isMobile ? handlePayAndCopy : undefined}
+              >
+                <span className="flex-1 font-mono text-center cursor-pointer">{upiId}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handlePayAndCopy()
+                  }}
+                  className="shrink-0 bg-transparent"
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-600 transition-transform scale-110 duration-200" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
         <Card className="mb-6 rounded-3xl">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
