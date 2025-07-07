@@ -112,10 +112,20 @@ export default function WhatsAppConfirmationPage() {
           </div>
           <h1 className="text-3xl font-bold mb-4">Booking Request Submitted!</h1>
           <p className="text-lg text-muted-foreground">
-            Please follow the next steps below for payment.
+            We’ve sent a confirmation to your WhatsApp. Please check it for payment instructions.
           </p>
         </div>
+        {/* Proceed to Payment */}
+        <div className="flex flex-col gap-4">
+          <Button
+            onClick={handleProceedToPayment}
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-base rounded-full"
+          >
+            <CreditCard className="mr-2 h-5 w-5" />
+            Proceed to Payment
+          </Button>
 
+        </div>
         {/* Summary Card */}
         <Card className="mb-8 shadow-lg bg-card border-border rounded-3xl">
           <CardContent className="p-8 space-y-6">
@@ -228,16 +238,9 @@ export default function WhatsAppConfirmationPage() {
           </CardContent>
         </Card>
 
-        {/* Actions */}
-        <div className="flex flex-col gap-4">
-          <Button
-            onClick={handleProceedToPayment}
-            className="w-full bg-primary hover:bg-primary/90 text-white py-4 rounded-full"
-          >
-            <CreditCard className="mr-2 h-5 w-5" />
-            Proceed to Payment
-          </Button>
-          <Button variant="outline" asChild className="py-4 rounded-full border-border">
+        {/* Navigation */}
+        <div className="flex justify-center mt-4">
+          <Button variant="outline" asChild className="py-6 px-8 rounded-full border-border">
             <Link href="/">
               <Home className="mr-2 h-5 w-5" />
               Back to Home
