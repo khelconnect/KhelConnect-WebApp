@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle, Check } from "lucide-react"
+import { QrCode, Copy, CreditCard, MessageCircle, CheckCircle, AlertCircle,X, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +29,9 @@ export default function PaymentPage() {
     customerEmail: "",
     customerPhone: "",
   })
+  
+  const [showStatusPopup, setShowStatusPopup] = useState(false)
+  const [paymentTimer, setPaymentTimer] = useState<NodeJS.Timeout | null>(null)
 
   const [slotTimes, setSlotTimes] = useState<Record<string, string>>({})
 
@@ -48,6 +51,15 @@ export default function PaymentPage() {
       customerPhone: searchParams.get("customerPhone") || "",
     })
   }, [searchParams])
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (paymentTimer) {
+        clearTimeout(paymentTimer)
+      }
+    }
+  }, [paymentTimer])
 
   // ✅ Fetch time slots on mount
   useEffect(() => {
@@ -84,6 +96,20 @@ export default function PaymentPage() {
     return slotArray.length > 1 ? `${first} - ${last}` : first
   }
 
+  const startPaymentTimer = () => {
+    // Clear existing timer if any
+    if (paymentTimer) {
+      clearTimeout(paymentTimer)
+    }
+
+    // Set new timer for 15 seconds
+    const timer = setTimeout(() => {
+      setShowStatusPopup(true)
+    }, 6000)
+
+    setPaymentTimer(timer)
+  }
+
   const handlePayAndCopy = async () => {
     try {
       await navigator.clipboard.writeText(upiId)
@@ -97,6 +123,8 @@ export default function PaymentPage() {
       window.location.href = upiUrl
 
       setTimeout(() => setCopied(false), 1000)
+      // Start timer after copy
+      startPaymentTimer()
     } catch (err) {
       toast({
         title: "Error",
@@ -124,7 +152,22 @@ export default function PaymentPage() {
     basketball: "Basketball",
   }
 
+  const closeStatusPopup = () => {
+    setShowStatusPopup(false)
+    if (paymentTimer) {
+      clearTimeout(paymentTimer)
+      setPaymentTimer(null)
+    }
+  }
+
+  const checkBookingStatus = () => {
+    // Simulate checking booking status
+    alert("Checking your booking status... Please wait while we verify your payment.")
+    closeStatusPopup()
+  }
+
   return (
+    <>
     <main className="container mx-auto px-6 py-12">
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
@@ -255,11 +298,11 @@ export default function PaymentPage() {
         </Alert>
 
         {/* WhatsApp Support */}
-        <Card className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 rounded-3xl">
+        <Card className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 rounded-3xl">
           <CardContent className="p-6">
             <div className="text-center">
-              <h3 className="font-semibold text-red-800 dark:text-red-200 mb-2">Problem with Payment?</h3>
-              <p className="text-red-700 dark:text-red-300 text-sm mb-4">
+              <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Problem with Payment?</h3>
+              <p className="text-green-700 dark:text-green-300 text-sm mb-4">
                 Having trouble with the payment process? Our support team is here to help!
               </p>
               <Button
@@ -283,5 +326,51 @@ export default function PaymentPage() {
         </div>
       </div>
     </main>
+    {/* Booking Status Popup */}
+      {showStatusPopup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full mx-4 relative">
+            <button
+              onClick={closeStatusPopup}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full mb-4">
+                <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+
+              <h3 className="text-xl font-semibold mb-2">Check Your Booking Status</h3>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
+                Have you completed the payment? Let's verify your booking status to ensure everything is confirmed.
+              </p>
+
+              <div className="space-y-3">
+                <Button
+                  onClick={checkBookingStatus}
+                  className="w-full bg-primary hover:bg-primary/90 text-white rounded-full py-3"
+                >
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Check Booking Status
+                </Button>
+
+                <Button
+                  onClick={() => { 
+                    closeStatusPopup(); 
+                    startPaymentTimer();
+                  }}
+                  variant="outline"
+                  className="w-full rounded-full py-3 bg-transparent"
+                >
+                  Continue Payment
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
