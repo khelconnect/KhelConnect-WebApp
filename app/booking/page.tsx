@@ -122,22 +122,24 @@ export default function BookingPage() {
     }
   };
 
-  const handleConfirmBooking = async (customUserId?: string) => {
-  if (!selectedDate || selectedSlots.length === 0) return;
+const handleConfirmBooking = async (customUserId?: string) => {
+  if (!selectedDate || selectedSlots.length === 0 || !turfInfo) return;
 
-const { data, error } = await supabase
-  .from("bookings")
-  .insert({
-    turf_id: turfId,
-    date: formattedDate,
-    slot: selectedSlots,
-    user_id: customUserId || userId || "00000000-0000-0000-0000-000000000000",
-    payment_status: "pending",   // default
-    status: "pending",           // default
-  })
-  .select()
-  .single();
+  const totalAmount = selectedSlots.length * turfInfo.price;
 
+  const { data, error } = await supabase
+    .from("bookings")
+    .insert({
+      turf_id: turfId,
+      date: formattedDate,
+      slot: selectedSlots,
+      user_id: customUserId || userId || "00000000-0000-0000-0000-000000000000",
+      payment_status: "pending",   // default
+      status: "pending",           // default
+      amount: totalAmount,         // ✅ new field added
+    })
+    .select()
+    .single();
 
   if (!error && data) {
     const bookingId = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -166,6 +168,7 @@ const { data, error } = await supabase
     console.error("Booking failed:", error?.message);
   }
 };
+
 
 const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
