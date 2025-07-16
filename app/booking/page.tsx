@@ -517,11 +517,12 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
   }
 
   return (
+<div key={slot.id} className="relative group">
 <Button
   key={slot.id}
   variant={isSelected ? "default" : "outline"}
   className={cn(
-    "h-auto py-3 text-sm rounded-xl relative justify-center",
+    "h-auto py-3 text-sm rounded-xl relative justify-center w-full group",
     (slot.isBooked || isPast) &&
       "bg-secondary border-border text-muted-foreground cursor-not-allowed opacity-50",
     isSelected && "bg-primary text-white border-primary",
@@ -533,12 +534,24 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
   disabled={slot.isBooked || isPast}
   onClick={() => handleSlotToggle(slot.id)}
   onTouchEnd={(e) => {
-    e.preventDefault(); // Prevent 300ms delay on some devices
+    e.preventDefault();
     handleSlotToggle(slot.id);
   }}
 >
-  {slot.start_time} - {slot.end_time}
+  {/* 🕓 Time - show by default, hide on hover (desktop only) */}
+  <span className="block sm:group-hover:hidden">
+    {slot.start_time} - {slot.end_time}
+  </span>
+
+  {/* 💸 Price - hidden by default, show on hover (desktop only) */}
+  <span className="hidden sm:group-hover:block font-semibold">
+    ₹{slotPrices[slot.id] ?? turfInfo?.price ?? 0}
+  </span>
 </Button>
+
+
+</div>
+
 
   );
 })}
@@ -549,7 +562,8 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
     )}
   </CardContent>
 </Card>
-<div className="mb-12">
+{/* Booking Summary - visible on all devices */}
+<div className="mb-32 md:mb-12"> {/* leave space for sticky bar */}
   <Card className="bg-card border-border shadow-md rounded-3xl">
     <CardContent className="p-8">
       <div className="flex justify-between items-center mb-6">
@@ -575,25 +589,55 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
         </div>
         <div className="text-right">
           <p className="text-base text-muted-foreground">Total Amount</p>
-          <p className="text-3xl font-bold text-primary">₹{selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo?.price || 0), 0)
-}</p>
+          <p className="text-3xl font-bold text-primary">
+            ₹{selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo?.price || 0), 0)}
+          </p>
           <p className="text-sm text-muted-foreground">
             {selectedSlots.length > 0 ? `${selectedSlots.length} x 30 minutes` : "No slots selected"}
           </p>
         </div>
       </div>
-      <Button
-        className="w-full bg-primary hover:bg-mint-dark text-white rounded-full"
-        size="lg"
-        disabled={!selectedDate || selectedSlots.length === 0}
-        onClick={() => setShowPersonalDetailsModal(true)}
-      >
-        Confirm Booking
-        <ArrowRight className="ml-2 h-5 w-5" />
-      </Button>
+
+      {/* Keep confirm button here for desktop */}
+      <div className="hidden md:block">
+        <Button
+          className="w-full bg-primary hover:bg-mint-dark text-white rounded-full"
+          size="lg"
+          disabled={!selectedDate || selectedSlots.length === 0}
+          onClick={() => setShowPersonalDetailsModal(true)}
+        >
+          Confirm Booking
+          <ArrowRight className="ml-2 h-5 w-5" />
+        </Button>
+      </div>
     </CardContent>
   </Card>
 </div>
+
+
+{/* Mobile Sticky Total Bar
+<div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-lg px-4 py-3 md:hidden">
+  <div className="flex justify-between items-center">
+    <div>
+      <p className="text-sm text-muted-foreground">Total Amount</p>
+      <p className="text-xl font-bold text-primary">
+        ₹{selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo?.price || 0), 0)}
+      </p>
+    </div>
+    <Button
+      className="bg-primary hover:bg-mint-dark text-white rounded-full px-6 py-3"
+      size="sm"
+      disabled={!selectedDate || selectedSlots.length === 0}
+      onClick={() => setShowPersonalDetailsModal(true)}
+    >
+      Confirm
+      <ArrowRight className="ml-2 h-4 w-4" />
+    </Button>
+  </div>
+</div> */}
+
+
+
 
       {/* Modal */}
       <Dialog open={showPersonalDetailsModal} onOpenChange={setShowPersonalDetailsModal}>
@@ -680,7 +724,26 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
       </Button>
     </div>
   </DialogContent>
-</Dialog>
+</Dialog>{/* Sticky Mobile Footer for Total & Confirm */}
+<div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-lg px-4 py-3 md:hidden">
+  <div className="flex justify-between items-center">
+    <div>
+      <p className="text-sm text-muted-foreground">Total</p>
+      <p className="text-lg font-bold text-primary">
+        ₹{selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo?.price || 0), 0)}
+      </p>
+    </div>
+    <Button
+      className="bg-primary hover:bg-mint-dark text-white rounded-full px-6 py-3"
+      size="sm"
+      disabled={!selectedDate || selectedSlots.length === 0}
+      onClick={() => setShowPersonalDetailsModal(true)}
+    >
+      Confirm
+      <ArrowRight className="ml-2 h-4 w-4" />
+    </Button>
+  </div>
+</div>
 
     </main>
   );
