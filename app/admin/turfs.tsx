@@ -11,6 +11,20 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,6 +45,7 @@ export default function TurfAdminPanel() {
     amenities: '',
     distance: '',
     image: '',
+    rating: '',
     sports: [] as string[],
   });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -39,6 +54,16 @@ export default function TurfAdminPanel() {
   const [slots, setSlots] = useState<any[]>([]);
   const [pricing, setPricing] = useState<Record<string, any>>({});
   const [slotGroupPrice, setSlotGroupPrice] = useState<Record<string, any>>({});
+  const [expandedTurfId, setExpandedTurfId] = useState<string | null>(null);
+  const [popupSlot, setPopupSlot] = useState<null | {
+    turfId: string;
+    slotId: string;
+    dayType: string;
+    start: string;
+    end: string;
+  }>(null);
+  const [popupPrice, setPopupPrice] = useState('');
+  const [selectedSport, setSelectedSport] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchTurfs();
@@ -58,17 +83,18 @@ export default function TurfAdminPanel() {
     setSlots(data || []);
   };
 
-  const fetchPricing = async (turfId: string) => {
+  const fetchPricing = async (turfId: string, sport: string) => {
     const { data } = await supabase
       .from('turf_prices')
       .select('*')
-      .eq('turf_id', turfId);
+      .eq('turf_id', turfId)
+      .eq('sport', sport);
 
     const priceMap = (data || []).reduce((acc: any, record: any) => {
       acc[`${record.slot_id}__${record.day_type}`] = record.price;
       return acc;
     }, {});
-    setPricing((prev) => ({ ...prev, [turfId]: priceMap }));
+    setPricing((prev) => ({ ...prev, [turfId + '__' + sport]: priceMap }));
   };
 
   const handleInputChange = (field: string, value: string) => {
@@ -88,34 +114,62 @@ export default function TurfAdminPanel() {
   };
 
   const addTurf = async () => {
-    await supabase.from('turfs').insert([formData]);
-    setFormData({
-      name: '',
-      location: '',
-      price: '',
-      amenities: '',
-      distance: '',
-      image: '',
-      sports: [],
-    });
-    fetchTurfs();
+    const payload = {
+      ...formData,
+      price: parseInt(formData.price),
+      rating: parseFloat(formData.rating),
+      amenities: formData.amenities
+        .split(',')
+        .map((a) => a.trim())
+        .filter(Boolean),
+      sports: formData.sports,
+    };
+
+    const { error } = await supabase.from('turfs').insert([payload]);
+    if (error) console.error('Add turf error:', error);
+    else {
+      setFormData({
+        name: '',
+        location: '',
+        price: '',
+        amenities: '',
+        distance: '',
+        image: '',
+        rating: '',
+        sports: [],
+      });
+      fetchTurfs();
+    }
   };
 
   const startEdit = (turf: any) => {
     setInlineEditingId(turf.id);
     setInlineData(turf);
-    fetchPricing(turf.id);
   };
 
   const saveEdit = async (id: string) => {
-    await supabase.from('turfs').update(inlineData).eq('id', id);
-    setInlineEditingId(null);
-    fetchTurfs();
+    const updatePayload = {
+      ...inlineData,
+      price: parseInt(inlineData.price),
+      rating: parseFloat(inlineData.rating),
+      amenities: typeof inlineData.amenities === 'string'
+        ? inlineData.amenities.split(',').map((a: string) => a.trim())
+        : inlineData.amenities,
+      sports: inlineData.sports,
+    };
+
+    const { error } = await supabase.from('turfs').update(updatePayload).eq('id', id);
+    if (error) console.error('Update error:', error);
+    else {
+      setInlineEditingId(null);
+      fetchTurfs();
+    }
   };
 
   const deleteTurf = async (id: string) => {
-    await supabase.from('turfs').delete().eq('id', id);
-    fetchTurfs();
+    const { error } = await supabase.from('turfs').delete().eq('id', id);
+    if (error) console.error('Delete error:', error);
+    else fetchTurfs();
   };
 
   const handleGroupPriceChange = (turfId: string, period: string, dayType: string, value: string) => {
@@ -126,6 +180,8 @@ export default function TurfAdminPanel() {
   };
 
   const saveGroupPrices = async (turfId: string) => {
+    const sport = selectedSport[turfId];
+    if (!sport) return;
     const entries = Object.entries(slotGroupPrice).filter(([k]) => k.startsWith(turfId));
     for (const [key, price] of entries) {
       const [, period, dayType] = key.split('__');
@@ -135,13 +191,14 @@ export default function TurfAdminPanel() {
           .from('turf_prices')
           .upsert({
             turf_id: turfId,
+            sport,
             slot_id,
             day_type: dayType,
             price: parseInt(price),
-          }, { onConflict: ['turf_id', 'slot_id', 'day_type'] });
+          }, { onConflict: ['turf_id', 'sport', 'slot_id', 'day_type'] });
       }
     }
-    await fetchPricing(turfId);
+    await fetchPricing(turfId, sport);
   };
 
   const saveIndividualPrice = async (
@@ -150,13 +207,16 @@ export default function TurfAdminPanel() {
     dayType: string,
     value: string
   ) => {
+    const sport = selectedSport[turfId];
+    if (!sport) return;
     await supabase.from('turf_prices').upsert({
       turf_id: turfId,
+      sport,
       slot_id: slotId,
       day_type: dayType,
       price: parseInt(value),
-    }, { onConflict: ['turf_id', 'slot_id', 'day_type'] });
-    await fetchPricing(turfId);
+    }, { onConflict: ['turf_id', 'sport', 'slot_id', 'day_type'] });
+    await fetchPricing(turfId, sport);
   };
 
   return (
@@ -169,15 +229,17 @@ export default function TurfAdminPanel() {
 
         <TabsContent value="add">
           <div className="space-y-4 mt-4">
-            {Object.keys(formData).map((key) => key !== 'sports' && (
-              <div key={key}>
-                <Label>{key}</Label>
-                <Input
-                  value={(formData as any)[key]}
-                  onChange={(e) => handleInputChange(key, e.target.value)}
-                />
-              </div>
-            ))}
+            {Object.keys(formData).map((key) =>
+              key !== 'sports' ? (
+                <div key={key}>
+                  <Label>{key}</Label>
+                  <Input
+                    value={(formData as any)[key]}
+                    onChange={(e) => handleInputChange(key, e.target.value)}
+                  />
+                </div>
+              ) : null
+            )}
             <div className="flex flex-wrap gap-4">
               {sportsOptions.map((sport) => (
                 <div key={sport}>
@@ -202,7 +264,7 @@ export default function TurfAdminPanel() {
                     {inlineEditingId === turf.id ? (
                       <>
                         {Object.keys(turf).map((key) =>
-                          key !== 'id' && key !== 'sports' ? (
+                          key !== 'id' ? (
                             <div key={key}>
                               <Label>{key}</Label>
                               <Input
@@ -227,53 +289,95 @@ export default function TurfAdminPanel() {
                       </>
                     )}
 
-                    {/* Pricing Section */}
-                    <h4 className="font-semibold mt-4">Pricing</h4>
-                    {["day", "evening"].map((period) => (
-                      <div key={period} className="my-2">
-                        <p className="font-semibold">{period.toUpperCase()}</p>
-                        {["weekday", "weekend"].map((dayType) => (
-                          <div key={dayType} className="flex gap-2 items-center">
-                            <Label className="w-20">{dayType}</Label>
-                            <Input
-                              type="number"
-                              placeholder="₹"
-                              value={slotGroupPrice[`${turf.id}__${period}__${dayType}`] ?? ""}
-                              onChange={(e) => handleGroupPriceChange(turf.id, period, dayType, e.target.value)}
-                            />
-                            <Button size="sm" onClick={() => saveGroupPrices(turf.id)}>Save Group</Button>
+                    <Label>Select Sport for Pricing</Label>
+                    <Select
+                      value={selectedSport[turf.id] || ''}
+                      onValueChange={(sport) => {
+                        setSelectedSport((prev) => ({ ...prev, [turf.id]: sport }));
+                        fetchPricing(turf.id, sport);
+                      }}
+                    >
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder="Select Sport" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(turf.sports || []).map((s: string) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {selectedSport[turf.id] && (
+                      <>
+                        {['day', 'evening'].map((period) => (
+                          <div key={period} className="my-2">
+                            <p className="font-semibold">{period.toUpperCase()}</p>
+                            {['weekday', 'weekend'].map((dayType) => (
+                              <div key={dayType} className="flex gap-2 items-center">
+                                <Label className="w-20">{dayType}</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="₹"
+                                  value={slotGroupPrice[`${turf.id}__${period}__${dayType}`] ?? ''}
+                                  onChange={(e) =>
+                                    handleGroupPriceChange(turf.id, period, dayType, e.target.value)
+                                  }
+                                />
+                                <Button size="sm" onClick={() => saveGroupPrices(turf.id)}>Save Group</Button>
+                              </div>
+                            ))}
                           </div>
                         ))}
-                      </div>
-                    ))}
 
-                    <p className="font-semibold mt-4">Individual Slot Prices</p>
-                    {slots.map((slot) =>
-                      ['weekday', 'weekend'].map((dayType) => {
-                        const key = `${slot.id}__${dayType}`;
-                        const value = pricing[turf.id]?.[key] || '';
-                        return (
-                          <div key={key} className="flex gap-2 items-center">
-                            <Label className="w-40">{slot.start_time}-{slot.end_time} ({dayType})</Label>
-                            <Input
-                              type="number"
-                              value={value}
-                              onChange={(e) => {
-                                setPricing((prev) => ({
-                                  ...prev,
-                                  [turf.id]: {
-                                    ...prev[turf.id],
-                                    [key]: e.target.value,
-                                  },
-                                }));
-                              }}
-                            />
-                            <Button size="sm" onClick={() =>
-                              saveIndividualPrice(turf.id, slot.id, dayType, pricing[turf.id]?.[key])
-                            }>Save</Button>
+                        <div className="mt-4">
+                          <div
+                            className="flex items-center justify-between cursor-pointer"
+                            onClick={() =>
+                              setExpandedTurfId(expandedTurfId === turf.id ? null : turf.id)
+                            }
+                          >
+                            <p className="font-semibold">Individual Slot Prices</p>
+                            <span className="text-xl">
+                              {expandedTurfId === turf.id ? '▾' : '▸'}
+                            </span>
                           </div>
-                        );
-                      })
+
+                          {expandedTurfId === turf.id && (
+                            <div className="space-y-4 mt-2">
+                              {['weekday', 'weekend'].map((dayType) => (
+                                <div key={dayType}>
+                                  <p className="font-semibold capitalize">{dayType}</p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {slots.map((slot) => {
+                                      const key = `${slot.id}__${dayType}`;
+                                      const value = pricing[turf.id + '__' + selectedSport[turf.id]]?.[key] || '';
+                                      return (
+                                        <Button
+                                          key={key}
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => {
+                                            setPopupSlot({
+                                              turfId: turf.id,
+                                              slotId: slot.id,
+                                              dayType,
+                                              start: slot.start_time,
+                                              end: slot.end_time,
+                                            });
+                                            setPopupPrice(value.toString());
+                                          }}
+                                        >
+                                          {slot.start_time} - {slot.end_time}
+                                        </Button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </>
                     )}
                   </CardContent>
                 </Card>
@@ -282,6 +386,45 @@ export default function TurfAdminPanel() {
           </ScrollArea>
         </TabsContent>
       </Tabs>
+
+      {popupSlot && (
+        <Dialog open={true} onOpenChange={() => setPopupSlot(null)}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Edit Price</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2">
+              <p>
+                Slot: <strong>{popupSlot.start} - {popupSlot.end}</strong>
+              </p>
+              <p>Day Type: <strong>{popupSlot.dayType}</strong></p>
+              <Input
+                type="number"
+                value={popupPrice}
+                onChange={(e) => setPopupPrice(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => {
+                  saveIndividualPrice(
+                    popupSlot.turfId,
+                    popupSlot.slotId,
+                    popupSlot.dayType,
+                    popupPrice
+                  );
+                  setPopupSlot(null);
+                }}
+              >
+                Save
+              </Button>
+              <Button variant="ghost" onClick={() => setPopupSlot(null)}>
+                Cancel
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
