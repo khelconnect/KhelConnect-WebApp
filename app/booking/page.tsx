@@ -69,6 +69,8 @@ export default function BookingPage() {
   const [showConflictDialog, setShowConflictDialog] = useState(false);
   const [existingUser, setExistingUser] = useState<any>(null);
   const [conflictFields, setConflictFields] = useState<{ name?: boolean; email?: boolean }>({});
+  const [slotPrices, setSlotPrices] = useState<{ [slotId: string]: number }>({});
+
 
 
   const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
@@ -83,49 +85,145 @@ export default function BookingPage() {
     if (!error && data) setTurfInfo(data);
   };
 
+  const fetchBestPriceForSlot = async (slot: Slot): Promise<number> => {
+  if (!turfId || !formattedDate || !selectedDate) return turfInfo?.price || 0;
+
+  const weekday = selectedDate.getDay(); // 0 = Sunday, ..., 6 = Saturday
+  const dateStr = format(selectedDate, "yyyy-MM-dd");
+  const slotStart = slot.start_time;
+  const slotEnd = slot.end_time;
+
+  const { data: rules, error } = await supabase
+    .from("turf_prices")
+    .select("*")
+    .eq("turf_id", turfId)
+    .eq("sport", sport)
+    .or(`slot_id.eq.${slot.id},day_of_week.eq.${weekday},date.eq.${dateStr},period.eq.${slot.period}`)
+    .order("priority", { ascending: false }); // Highest priority first
+
+  if (error) {
+    console.error("Error fetching price rules:", error.message);
+    return turfInfo?.price || 0;
+  }
+
+  const applicable = rules.find((rule) => {
+    if (rule.slot_id && rule.slot_id !== slot.id) return false;
+    if (rule.day_of_week !== null && rule.day_of_week !== weekday) return false;
+    if (rule.date && rule.date !== dateStr) return false;
+
+    if (rule.start_time && rule.end_time) {
+      return slotStart >= rule.start_time && slotEnd <= rule.end_time;
+    }
+
+    if (rule.period && rule.period !== slot.period) return false;
+
+    return true;
+  });
+
+  return applicable?.price ?? turfInfo?.price ?? 0;
+};
+
+
   const fetchSlots = async () => {
-    if (!turfId || !formattedDate) return;
-    setLoading(true);
+  if (!turfId || !formattedDate || !selectedDate) return;
+  setLoading(true);
 
-    const { data: allSlots } = await supabase
-      .from("time_slots")
-      .select("*")
-      .order("start_time", { ascending: true });
+  const { data: allSlots, error: slotError } = await supabase
+    .from("time_slots")
+    .select("*")
+    .order("start_time", { ascending: true });
 
-    const { data: existingBookings } = await supabase
-      .from("bookings")
-      .select("slot")
-      .eq("turf_id", turfId)
-      .eq("date", formattedDate);
-
-    const bookedSlotIds = (existingBookings || []).flatMap((booking) => booking.slot);
-
-    const slotsWithStatus = (allSlots || []).map((slot: any) => ({
-      ...slot,
-      isBooked: bookedSlotIds.includes(slot.id),
-    }));
-
-    setSlots(slotsWithStatus);
+  if (slotError) {
+    console.error("Error fetching slots:", slotError.message);
     setLoading(false);
-  };
+    return;
+  }
+
+  const { data: existingBookings, error: bookingError } = await supabase
+    .from("bookings")
+    .select("slot")
+    .eq("turf_id", turfId)
+    .eq("date", formattedDate);
+
+  const bookedSlotIds = (existingBookings || []).flatMap((booking) => booking.slot);
+
+  const slotsWithStatus = (allSlots || []).map((slot: any) => ({
+    ...slot,
+    isBooked: bookedSlotIds.includes(slot.id),
+  }));
+
+  setSlots(slotsWithStatus);
+
+  // 🧠 Fetch all applicable pricing rules in one query
+  const dayOfWeek = selectedDate.getDay();
+
+  const { data: pricingRules, error: priceError } = await supabase
+    .from("turf_prices")
+    .select("*")
+    .eq("turf_id", turfId)
+    .eq("sport", sport);
+
+  if (priceError) {
+    console.error("Error fetching pricing rules:", priceError.message);
+    setLoading(false);
+    return;
+  }
+
+  // 🧠 Compute best price for each slot using turf_prices rules
+  const priceMap: Record<string, number> = {};
+
+  for (const slot of slotsWithStatus) {
+    const applicablePrices = pricingRules
+      .filter((rule) => {
+        if (rule.slot_id && rule.slot_id === slot.id) return true;
+        if (rule.date && rule.date === formattedDate) return true;
+        if (rule.day_of_week !== null && rule.day_of_week === dayOfWeek) return true;
+        if (
+          rule.start_time &&
+          rule.end_time &&
+          slot.start_time >= rule.start_time &&
+          slot.end_time <= rule.end_time
+        )
+          return true;
+        if (rule.period && rule.period === slot.period) return true;
+        return false;
+      })
+      .sort((a, b) => b.priority - a.priority); // Higher priority first
+
+    if (applicablePrices.length > 0) {
+      priceMap[slot.id] = applicablePrices[0].price;
+    } else {
+      priceMap[slot.id] = turfInfo?.price || 0; // fallback
+    }
+  }
+
+  setSlotPrices(priceMap);
+  setLoading(false);
+};
+
 
   useEffect(() => {
     fetchTurfInfo();
     fetchSlots();
-  }, [formattedDate]);
+  }, [formattedDate, turfId]);
 
-  const handleSlotToggle = (id: string) => {
-    if (selectedSlots.includes(id)) {
-      setSelectedSlots(selectedSlots.filter((s) => s !== id));
-    } else {
-      setSelectedSlots([...selectedSlots, id]);
-    }
-  };
+const handleSlotToggle = async (id: string) => {
+  const isSelected = selectedSlots.includes(id);
+
+  if (isSelected) {
+    setSelectedSlots((prev) => prev.filter((s) => s !== id));
+  } else {
+    setSelectedSlots((prev) => [...prev, id]);
+  }
+};
+
 
 const handleConfirmBooking = async (customUserId?: string) => {
   if (!selectedDate || selectedSlots.length === 0 || !turfInfo) return;
 
-  const totalAmount = selectedSlots.length * turfInfo.price;
+const totalAmount = selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo.price), 0);
+
+
 
   const { data, error } = await supabase
     .from("bookings")
@@ -472,7 +570,8 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
         </div>
         <div className="text-right">
           <p className="text-base text-muted-foreground">Total Amount</p>
-          <p className="text-3xl font-bold text-primary">₹{selectedSlots.length * (turfInfo?.price || 0)}</p>
+          <p className="text-3xl font-bold text-primary">₹{selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo?.price || 0), 0)
+}</p>
           <p className="text-sm text-muted-foreground">
             {selectedSlots.length > 0 ? `${selectedSlots.length} x 30 minutes` : "No slots selected"}
           </p>

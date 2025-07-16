@@ -38,6 +38,7 @@ const sportsOptions = [
 
 export default function TurfAdminPanel() {
   const [turfs, setTurfs] = useState<any[]>([]);
+  const [slots, setSlots] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     location: '',
@@ -48,54 +49,53 @@ export default function TurfAdminPanel() {
     rating: '',
     sports: [] as string[],
   });
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [inlineData, setInlineData] = useState<any>({});
-  const [slots, setSlots] = useState<any[]>([]);
-  const [pricing, setPricing] = useState<Record<string, any>>({});
-  const [slotGroupPrice, setSlotGroupPrice] = useState<Record<string, any>>({});
-  const [expandedTurfId, setExpandedTurfId] = useState<string | null>(null);
-  const [popupSlot, setPopupSlot] = useState<null | {
-    turfId: string;
-    slotId: string;
-    dayType: string;
-    start: string;
-    end: string;
-  }>(null);
-  const [popupPrice, setPopupPrice] = useState('');
   const [selectedSport, setSelectedSport] = useState<Record<string, string>>({});
+  const [pricingRules, setPricingRules] = useState<Record<string, any[]>>({});
+  const [showRuleDialog, setShowRuleDialog] = useState<null | { turfId: string }>(null);
+  const [ruleForm, setRuleForm] = useState<{
+    ruleType: 'slot' | 'day_of_week' | 'date' | 'range' | 'period',
+    slotId?: string,
+    dayOfWeek?: string,
+    date?: string,
+    startTime?: string,
+    endTime?: string,
+    period?: string,
+    dayType?: string,
+    price?: string,
+    priority?: string
+  }>({
+    ruleType: 'slot',
+    dayType: 'weekday',
+    priority: '1',
+    price: '',
+  });
 
   useEffect(() => {
     fetchTurfs();
     fetchSlots();
   }, []);
 
-  const fetchTurfs = async () => {
+  async function fetchTurfs() {
     const { data } = await supabase.from('turfs').select('*');
     setTurfs(data || []);
-  };
+  }
 
-  const fetchSlots = async () => {
-    const { data } = await supabase
-      .from('time_slots')
-      .select('*')
-      .order('start_time', { ascending: true });
+  async function fetchSlots() {
+    const { data } = await supabase.from('time_slots').select('*').order('start_time');
     setSlots(data || []);
-  };
+  }
 
-  const fetchPricing = async (turfId: string, sport: string) => {
+  async function fetchPricingRules(turfId: string, sport: string) {
     const { data } = await supabase
       .from('turf_prices')
       .select('*')
       .eq('turf_id', turfId)
-      .eq('sport', sport);
-
-    const priceMap = (data || []).reduce((acc: any, record: any) => {
-      acc[`${record.slot_id}__${record.day_type}`] = record.price;
-      return acc;
-    }, {});
-    setPricing((prev) => ({ ...prev, [turfId + '__' + sport]: priceMap }));
-  };
+      .eq('sport', sport)
+      .order('priority', { ascending: false });
+    setPricingRules(prev => ({ ...prev, [turfId + '__' + sport]: data || [] }));
+  }
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -172,52 +172,42 @@ export default function TurfAdminPanel() {
     else fetchTurfs();
   };
 
-  const handleGroupPriceChange = (turfId: string, period: string, dayType: string, value: string) => {
-    setSlotGroupPrice((prev) => ({
-      ...prev,
-      [`${turfId}__${period}__${dayType}`]: value,
-    }));
-  };
+  function openNewRuleDialog(turfId: string) {
+    setRuleForm({ ruleType: 'slot', dayType: 'weekday', priority: '1', price: '' });
+    setShowRuleDialog({ turfId });
+  }
 
-  const saveGroupPrices = async (turfId: string) => {
+  async function saveRule() {
+    if (!showRuleDialog) return;
+    const turfId = showRuleDialog.turfId;
     const sport = selectedSport[turfId];
     if (!sport) return;
-    const entries = Object.entries(slotGroupPrice).filter(([k]) => k.startsWith(turfId));
-    for (const [key, price] of entries) {
-      const [, period, dayType] = key.split('__');
-      const slotIds = slots.filter((s) => s.period === period).map((s) => s.id);
-      for (const slot_id of slotIds) {
-        await supabase
-          .from('turf_prices')
-          .upsert({
-            turf_id: turfId,
-            sport,
-            slot_id,
-            day_type: dayType,
-            price: parseInt(price),
-          }, { onConflict: ['turf_id', 'sport', 'slot_id', 'day_type'] });
-      }
-    }
-    await fetchPricing(turfId, sport);
-  };
 
-  const saveIndividualPrice = async (
-    turfId: string,
-    slotId: string,
-    dayType: string,
-    value: string
-  ) => {
-    const sport = selectedSport[turfId];
-    if (!sport) return;
-    await supabase.from('turf_prices').upsert({
+    const payload: any = {
       turf_id: turfId,
       sport,
-      slot_id: slotId,
-      day_type: dayType,
-      price: parseInt(value),
-    }, { onConflict: ['turf_id', 'sport', 'slot_id', 'day_type'] });
-    await fetchPricing(turfId, sport);
-  };
+      price: parseFloat(ruleForm.price || '0'),
+      priority: parseInt(ruleForm.priority || '1'),
+    };
+
+    switch (ruleForm.ruleType) {
+      case 'slot': payload.slot_id = ruleForm.slotId; break;
+      case 'day_of_week': payload.day_of_week = parseInt(ruleForm.dayOfWeek!); break;
+      case 'date': payload.date = ruleForm.date; break;
+      case 'range':
+        payload.start_time = ruleForm.startTime;
+        payload.end_time = ruleForm.endTime;
+        break;
+      case 'period':
+        payload.period = ruleForm.period;
+        payload.day_type = ruleForm.dayType;
+        break;
+    }
+
+    await supabase.from('turf_prices').insert([payload]);
+    await fetchPricingRules(turfId, sport);
+    setShowRuleDialog(null);
+  }
 
   return (
     <div className="p-6">
@@ -257,170 +247,192 @@ export default function TurfAdminPanel() {
 
         <TabsContent value="edit">
           <ScrollArea className="h-[600px] mt-4 w-full">
-            <div className="space-y-4">
-              {turfs.map((turf) => (
-                <Card key={turf.id} className="p-4">
-                  <CardContent className="space-y-2">
-                    {inlineEditingId === turf.id ? (
-                      <>
-                        {Object.keys(turf).map((key) =>
-                          key !== 'id' ? (
-                            <div key={key}>
-                              <Label>{key}</Label>
-                              <Input
-                                value={inlineData[key] || ''}
-                                onChange={(e) =>
-                                  setInlineData((prev: any) => ({
-                                    ...prev,
-                                    [key]: e.target.value,
-                                  }))
-                                }
-                              />
-                            </div>
-                          ) : null
-                        )}
-                        <Button onClick={() => saveEdit(turf.id)}>Save</Button>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-lg font-semibold">{turf.name}</p>
-                        <Button onClick={() => startEdit(turf)}>Edit</Button>
-                        <Button variant="destructive" onClick={() => deleteTurf(turf.id)}>Delete</Button>
-                      </>
-                    )}
-
-                    <Label>Select Sport for Pricing</Label>
-                    <Select
-                      value={selectedSport[turf.id] || ''}
-                      onValueChange={(sport) => {
-                        setSelectedSport((prev) => ({ ...prev, [turf.id]: sport }));
-                        fetchPricing(turf.id, sport);
-                      }}
-                    >
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Select Sport" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(turf.sports || []).map((s: string) => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    {selectedSport[turf.id] && (
-                      <>
-                        {['day', 'evening'].map((period) => (
-                          <div key={period} className="my-2">
-                            <p className="font-semibold">{period.toUpperCase()}</p>
-                            {['weekday', 'weekend'].map((dayType) => (
-                              <div key={dayType} className="flex gap-2 items-center">
-                                <Label className="w-20">{dayType}</Label>
+            <div className="space-y-6">
+              {turfs.map(turf => {
+                const key = turf.id + '__' + (selectedSport[turf.id] || '');
+                const rules = pricingRules[key] || [];
+                return (
+                  <Card key={turf.id} className="p-4">
+                    <CardContent className="space-y-4">
+                      {inlineEditingId === turf.id ? (
+                        <>
+                          {Object.keys(turf).map((key) =>
+                            key !== 'id' ? (
+                              <div key={key}>
+                                <Label>{key}</Label>
                                 <Input
-                                  type="number"
-                                  placeholder="₹"
-                                  value={slotGroupPrice[`${turf.id}__${period}__${dayType}`] ?? ''}
+                                  value={inlineData[key] || ''}
                                   onChange={(e) =>
-                                    handleGroupPriceChange(turf.id, period, dayType, e.target.value)
+                                    setInlineData((prev: any) => ({
+                                      ...prev,
+                                      [key]: e.target.value,
+                                    }))
                                   }
                                 />
-                                <Button size="sm" onClick={() => saveGroupPrices(turf.id)}>Save Group</Button>
+                              </div>
+                            ) : null
+                          )}
+                          <Button onClick={() => saveEdit(turf.id)}>Save</Button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-lg font-semibold">{turf.name}</p>
+                          <Button onClick={() => startEdit(turf)}>Edit</Button>
+                          <Button variant="destructive" onClick={() => deleteTurf(turf.id)}>Delete</Button>
+                        </>
+                      )}
+
+                      <Label>Select Sport for Pricing</Label>
+                      <Select
+                        value={selectedSport[turf.id] || ''}
+                        onValueChange={sport => {
+                          setSelectedSport(prev => ({ ...prev, [turf.id]: sport }));
+                          fetchPricingRules(turf.id, sport);
+                        }}
+                      >
+                        <SelectTrigger className="w-[200px]">
+                          <SelectValue placeholder="Select Sport" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(turf.sports || []).map((s: string) => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {selectedSport[turf.id] && (
+                        <>
+                          <Button onClick={() => openNewRuleDialog(turf.id)}>
+                            Add pricing rule
+                          </Button>
+                          <div className="space-y-2">
+                            {rules.map(rule => (
+                              <div key={rule.id} className="border rounded p-2">
+                                <pre className="text-xs">
+                                  {JSON.stringify({
+                                    type: rule.slot_id ? 'slot' :
+                                      rule.date ? 'date' :
+                                        rule.day_of_week !== null ? 'day_of_week' :
+                                          rule.period ? 'period' : 'range',
+                                    ...('slot_id' in rule && { slot_id: rule.slot_id }),
+                                    ...(rule.day_of_week !== null && { day_of_week: rule.day_of_week }),
+                                    ...(rule.date && { date: rule.date }),
+                                    ...(rule.start_time && { start_time: rule.start_time, end_time: rule.end_time }),
+                                    ...(rule.period && { period: rule.period, day_type: rule.day_type }),
+                                    price: rule.price,
+                                    priority: rule.priority,
+                                  }, null, 2)}
+                                </pre>
                               </div>
                             ))}
                           </div>
-                        ))}
-
-                        <div className="mt-4">
-                          <div
-                            className="flex items-center justify-between cursor-pointer"
-                            onClick={() =>
-                              setExpandedTurfId(expandedTurfId === turf.id ? null : turf.id)
-                            }
-                          >
-                            <p className="font-semibold">Individual Slot Prices</p>
-                            <span className="text-xl">
-                              {expandedTurfId === turf.id ? '▾' : '▸'}
-                            </span>
-                          </div>
-
-                          {expandedTurfId === turf.id && (
-                            <div className="space-y-4 mt-2">
-                              {['weekday', 'weekend'].map((dayType) => (
-                                <div key={dayType}>
-                                  <p className="font-semibold capitalize">{dayType}</p>
-                                  <div className="flex flex-wrap gap-2">
-                                    {slots.map((slot) => {
-                                      const key = `${slot.id}__${dayType}`;
-                                      const value = pricing[turf.id + '__' + selectedSport[turf.id]]?.[key] || '';
-                                      return (
-                                        <Button
-                                          key={key}
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => {
-                                            setPopupSlot({
-                                              turfId: turf.id,
-                                              slotId: slot.id,
-                                              dayType,
-                                              start: slot.start_time,
-                                              end: slot.end_time,
-                                            });
-                                            setPopupPrice(value.toString());
-                                          }}
-                                        >
-                                          {slot.start_time} - {slot.end_time}
-                                        </Button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </ScrollArea>
         </TabsContent>
       </Tabs>
 
-      {popupSlot && (
-        <Dialog open={true} onOpenChange={() => setPopupSlot(null)}>
-          <DialogContent className="sm:max-w-[400px]">
+      {showRuleDialog && (
+        <Dialog open onOpenChange={() => setShowRuleDialog(null)}>
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Edit Price</DialogTitle>
+              <DialogTitle>Add Pricing Rule</DialogTitle>
             </DialogHeader>
-            <div className="space-y-2">
-              <p>
-                Slot: <strong>{popupSlot.start} - {popupSlot.end}</strong>
-              </p>
-              <p>Day Type: <strong>{popupSlot.dayType}</strong></p>
+            <div className="space-y-4">
+              <Select
+                value={ruleForm.ruleType}
+                onValueChange={(v) => setRuleForm(f => ({ ...f, ruleType: v as any }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="slot">By Slot</SelectItem>
+                  <SelectItem value="day_of_week">By Day of Week</SelectItem>
+                  <SelectItem value="date">By Date</SelectItem>
+                  <SelectItem value="range">By Time Range</SelectItem>
+                  <SelectItem value="period">By Period (day/evening)</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {ruleForm.ruleType === 'slot' && (
+                <Select
+                  value={ruleForm.slotId || ''}
+                  onValueChange={(v) => setRuleForm(f => ({ ...f, slotId: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Slot" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {slots.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.start_time} - {s.end_time}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {ruleForm.ruleType === 'day_of_week' && (
+                <Select value={ruleForm.dayOfWeek} onValueChange={v => setRuleForm(f => ({ ...f, dayOfWeek: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select weekday (0–6)" /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 7 }, (_, i) => (
+                      <SelectItem key={i} value={i.toString()}>{i}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {ruleForm.ruleType === 'date' && (
+                <Input type="date" value={ruleForm.date} onChange={e => setRuleForm(f => ({ ...f, date: e.target.value }))} />
+              )}
+
+              {ruleForm.ruleType === 'range' && (
+                <>
+                  <Input type="time" value={ruleForm.startTime} onChange={e => setRuleForm(f => ({ ...f, startTime: e.target.value }))} />
+                  <Input type="time" value={ruleForm.endTime} onChange={e => setRuleForm(f => ({ ...f, endTime: e.target.value }))} />
+                </>
+              )}
+
+              {ruleForm.ruleType === 'period' && (
+                <>
+                  <Select value={ruleForm.period} onValueChange={v => setRuleForm(f => ({ ...f, period: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select period" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="day">Day</SelectItem>
+                      <SelectItem value="evening">Evening</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={ruleForm.dayType} onValueChange={v => setRuleForm(f => ({ ...f, dayType: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Weekday/Weekend" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="weekday">Weekday</SelectItem>
+                      <SelectItem value="weekend">Weekend</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+
               <Input
                 type="number"
-                value={popupPrice}
-                onChange={(e) => setPopupPrice(e.target.value)}
+                placeholder="Price"
+                value={ruleForm.price}
+                onChange={e => setRuleForm(f => ({ ...f, price: e.target.value }))}
+              />
+              <Input
+                type="number"
+                placeholder="Priority (higher = override)"
+                value={ruleForm.priority}
+                onChange={e => setRuleForm(f => ({ ...f, priority: e.target.value }))}
               />
             </div>
             <DialogFooter>
-              <Button
-                onClick={() => {
-                  saveIndividualPrice(
-                    popupSlot.turfId,
-                    popupSlot.slotId,
-                    popupSlot.dayType,
-                    popupPrice
-                  );
-                  setPopupSlot(null);
-                }}
-              >
-                Save
-              </Button>
-              <Button variant="ghost" onClick={() => setPopupSlot(null)}>
-                Cancel
-              </Button>
+              <Button onClick={saveRule}>Save Rule</Button>
+              <Button variant="ghost" onClick={() => setShowRuleDialog(null)}>Cancel</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
