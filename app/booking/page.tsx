@@ -517,24 +517,29 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
   }
 
   return (
-    <Button
-      key={slot.id}
-      variant={isSelected ? "default" : "outline"}
-      className={cn(
-        "h-auto py-3 text-sm rounded-xl relative justify-center",
-        (slot.isBooked || isPast) &&
-          "bg-secondary border-border text-muted-foreground cursor-not-allowed opacity-50",
-        isSelected && "bg-primary text-white border-primary",
-        !isSelected &&
-          !slot.isBooked &&
-          !isPast &&
-          "hover:border-primary hover:text-foreground bg-secondary border-border"
-      )}
-      disabled={slot.isBooked || isPast}
-      onClick={() => handleSlotToggle(slot.id)}
-    >
-      {slot.start_time} - {slot.end_time}
-    </Button>
+<Button
+  key={slot.id}
+  variant={isSelected ? "default" : "outline"}
+  className={cn(
+    "h-auto py-3 text-sm rounded-xl relative justify-center",
+    (slot.isBooked || isPast) &&
+      "bg-secondary border-border text-muted-foreground cursor-not-allowed opacity-50",
+    isSelected && "bg-primary text-white border-primary",
+    !isSelected &&
+      !slot.isBooked &&
+      !isPast &&
+      "hover:border-primary hover:text-foreground bg-secondary border-border"
+  )}
+  disabled={slot.isBooked || isPast}
+  onClick={() => handleSlotToggle(slot.id)}
+  onTouchEnd={(e) => {
+    e.preventDefault(); // Prevent 300ms delay on some devices
+    handleSlotToggle(slot.id);
+  }}
+>
+  {slot.start_time} - {slot.end_time}
+</Button>
+
   );
 })}
 
