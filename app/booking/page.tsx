@@ -545,7 +545,7 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
 
   {/* 💸 Price - hidden by default, show on hover (desktop only) */}
   <span className="hidden sm:group-hover:block font-semibold">
-    ₹{slotPrices[slot.id] ?? turfInfo?.price ?? 0}
+    ₹{slotPrices[slot.id] ?? turfInfo.price}
   </span>
 </Button>
 

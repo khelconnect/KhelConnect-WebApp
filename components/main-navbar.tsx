@@ -5,25 +5,27 @@ import { Home, Calendar, User, Menu, Building2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 
 export function MainNavbar() {
   const pathname = usePathname()
+  const router = useRouter()
   const isOwnerSection = pathname?.startsWith("/owner")
 
   return (
     <header className="border-b border-border sticky top-0 bg-background z-10">
       <div className="container mx-auto px-6 py-5 flex justify-between items-center">
         <Link href={isOwnerSection ? "/owner/dashboard" : "/"} className="font-bold text-xl flex items-center gap-3">
-          {/* <span className="bg-primary text-primary-foreground p-1.5 rounded-full text-sm">KC</span> */}
           <img
             src="/logo.png"
             alt="Khelconnect Logo"
             className="h-12 w-12 rounded-full object-contain"
           />
-          <p className="font-qualyneue"><span className="font-bold">Khel</span>
-          <span className="font-light">Connect</span>
-          {isOwnerSection && <span className="text-primary"> Partner</span>}</p>
+          <p className="font-qualyneue">
+            <span className="font-bold">Khel</span>
+            <span className="font-light">Connect</span>
+            {isOwnerSection && <span className="text-primary"> Partner</span>}
+          </p>
         </Link>
 
         {/* Desktop Navigation */}
@@ -56,9 +58,12 @@ export function MainNavbar() {
             </>
           )}
           <ThemeToggle />
-          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full">
+          <Button
+            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full"
+            onClick={() => router.push("/my-bookings")}
+          >
             <User className="h-4 w-4 mr-2" />
-            Sign In
+            Bookings
           </Button>
         </nav>
 
@@ -94,9 +99,12 @@ export function MainNavbar() {
                     </Link>
                   </>
                 )}
-                <Button className="w-full justify-start bg-primary hover:bg-primary/90 text-primary-foreground rounded-full">
+                <Button
+                  className="w-full justify-start bg-primary hover:bg-primary/90 text-primary-foreground rounded-full"
+                  onClick={() => router.push("/my-bookings")}
+                >
                   <User className="h-5 w-5 mr-2" />
-                  Sign In
+                  Bookings
                 </Button>
               </div>
             </SheetContent>
