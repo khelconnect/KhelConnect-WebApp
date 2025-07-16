@@ -70,6 +70,7 @@ export default function BookingPage() {
   const [existingUser, setExistingUser] = useState<any>(null);
   const [conflictFields, setConflictFields] = useState<{ name?: boolean; email?: boolean }>({});
   const [slotPrices, setSlotPrices] = useState<{ [slotId: string]: number }>({});
+  const touchStartY = React.useRef<number | null>(null);
 
 
 
@@ -532,12 +533,23 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
       "hover:border-primary hover:text-foreground bg-secondary border-border"
   )}
   disabled={slot.isBooked || isPast}
-  onClick={() => handleSlotToggle(slot.id)}
+  onClick={() => handleSlotToggle(slot.id)} // desktop
+  onTouchStart={(e) => {
+    touchStartY.current = e.touches[0].clientY;
+  }}
   onTouchEnd={(e) => {
-    e.preventDefault();
-    handleSlotToggle(slot.id);
+    const endY = e.changedTouches[0].clientY;
+    const deltaY = Math.abs(endY - (touchStartY.current ?? 0));
+
+    if (deltaY < 10) {
+      // It's a tap
+      handleSlotToggle(slot.id);
+    }
+
+    touchStartY.current = null;
   }}
 >
+
   {/* 🕓 Time - show by default, hide on hover (desktop only) */}
   <span className="block sm:group-hover:hidden">
     {slot.start_time} - {slot.end_time}
