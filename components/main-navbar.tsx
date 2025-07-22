@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { usePathname, useRouter } from "next/navigation"
+import { useUserStore } from "@/lib/userStore"
 
 export function MainNavbar() {
   const pathname = usePathname()
   const router = useRouter()
   const isOwnerSection = pathname?.startsWith("/owner")
+  const userName = useUserStore((state) => state.name)
 
   return (
     <header className="border-b border-border sticky top-0 bg-background z-10">
@@ -58,13 +60,14 @@ export function MainNavbar() {
             </>
           )}
           <ThemeToggle />
-          <Button
-            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full"
-            onClick={() => router.push("/my-bookings")}
-          >
-            <User className="h-4 w-4 mr-2" />
-            Bookings
-          </Button>
+<Button
+  onClick={() => router.push('/my-bookings')}
+  className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full"
+>
+  <User className="h-4 w-4 mr-2" />
+  {userName ? userName : "Bookings"}
+</Button>
+
         </nav>
 
         {/* Mobile Navigation */}

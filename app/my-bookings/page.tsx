@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useUserStore } from "@/lib/userStore"
 
 export default function MyBookingsPage() {
   const [phone, setPhone] = useState('');
@@ -20,11 +21,17 @@ export default function MyBookingsPage() {
     setError('');
     setBookings([]);
 
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('phone', phone)
-      .single();
+const { data: user, error: userError } = await supabase
+  .from('users')
+  .select('id, name')
+  .eq('phone', phone)
+  .single();
+
+if (user) {
+  setUserId(user.id);
+  useUserStore.getState().setName(user.name); // <-- this line
+}
+
 
     if (userError || !user) {
       setError('No user found with this phone number.');
