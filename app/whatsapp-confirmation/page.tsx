@@ -213,6 +213,9 @@ export default function WhatsAppConfirmationPage() {
                 <p className="text-2xl font-bold text-primary">
                   ₹{bookingDetails.price}
                 </p>
+                <p className="text-sm text-primary">
+                  ₹350 + ₹{Math.max(Number(bookingDetails.price) - 350, 0)}
+                </p>
               </div>
             </div>
           </CardContent>

@@ -275,10 +275,19 @@ export default function PaymentPage() {
                 <span className="text-muted-foreground">Time:</span>
                 <span>{formatSlotRange()}</span>
               </div>
-              <div className="flex justify-between items-center pt-3 border-t">
-                <span className="text-lg font-semibold">Total Amount:</span>
-                <span className="text-2xl font-bold text-primary">₹{bookingDetails.price}</span>
+              <div className="flex justify-between items-center pt-2 border-t">
+                <span className="text-md font-semibold">Total Amount:</span>
+                <span className="text-xl font-bold text-primary/60">₹{bookingDetails.price}</span>
               </div>
+              <div className="flex justify-between items-center pt-0.01 border-t">
+                <span className="text-md font-semibold">Amount to be paid at the turf:</span>
+                <span className="text-xl font-bold text-primary/60">₹{Math.max(Number(bookingDetails.price) - 350, 0)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-3 border-t">
+                <span className="text-lg font-semibold">Advance to be paid now:</span>
+                <span className="text-2xl font-bold text-primary">₹350</span>
+              </div>
+
             </div>
           </CardContent>
         </Card>
