@@ -5,7 +5,7 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils"
-import { format } from "date-fns";
+import { format, startOfDay, isBefore } from "date-fns";
 import { supabase } from "@/lib/supabaseClient";
 import {
   CalendarIcon,
@@ -106,6 +106,7 @@ export default function BookingPage() {
     return turfInfo?.price || 0;
   }
 
+  
   const applicable = rules.find((rule) => {
     if (rule.slot_id && rule.slot_id !== slot.id) return false;
     if (rule.day_of_week !== null && rule.day_of_week !== weekday) return false;
@@ -123,6 +124,21 @@ export default function BookingPage() {
   return applicable?.price ?? turfInfo?.price ?? 0;
 };
 
+const selectedObjs = selectedSlots
+  .map(id => slots.find(s => s.id === id))
+  .filter(Boolean)
+  .sort((a, b) => a!.start_time.localeCompare(b!.start_time));
+
+const contiguous = selectedObjs.every((s, i) =>
+  i === 0 || selectedObjs[i-1]!.end_time === s!.start_time
+);
+
+const summaryText = selectedObjs.length
+  ? (contiguous
+     ? `${selectedObjs[0]!.start_time} - ${selectedObjs.at(-1)!.end_time}`
+     : `${selectedObjs.length} slots selected`)
+  : "Select time slot(s)";
+
 
   const fetchSlots = async () => {
   if (!turfId || !formattedDate || !selectedDate) return;
@@ -139,11 +155,17 @@ export default function BookingPage() {
     return;
   }
 
-  const { data: existingBookings, error: bookingError } = await supabase
-    .from("bookings")
-    .select("slot")
-    .eq("turf_id", turfId)
-    .eq("date", formattedDate);
+let query = supabase
+  .from("bookings")
+  .select("slot")
+  .eq("turf_id", turfId)
+  .eq("date", formattedDate);
+
+if (sport) {
+  query = query.eq("sport", sport);
+}
+
+const { data: existingBookings, error: bookingError } = await query;
 
   const bookedSlotIds = (existingBookings || []).flatMap((booking) => booking.slot);
 
@@ -202,10 +224,11 @@ export default function BookingPage() {
 };
 
 
-  useEffect(() => {
-    fetchTurfInfo();
-    fetchSlots();
-  }, [formattedDate, turfId]);
+useEffect(() => { if (turfId) fetchTurfInfo(); }, [turfId]);
+
+useEffect(() => {
+  if (turfInfo && formattedDate) fetchSlots();
+}, [turfInfo, formattedDate, turfId, sport]);
 
 const handleSlotToggle = async (id: string) => {
   const isSelected = selectedSlots.includes(id);
@@ -229,6 +252,7 @@ const totalAmount = selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || t
     .from("bookings")
     .insert({
       turf_id: turfId,
+      sport: sport,
       date: formattedDate,
       slot: selectedSlots,
       user_id: customUserId || userId || "00000000-0000-0000-0000-000000000000",
@@ -255,7 +279,7 @@ const totalAmount = selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || t
           turfName: turfInfo?.name || "",
           date: formattedDate || "",
           slots: selectedSlots.join(","),
-          price: turfInfo?.price?.toString() || "",
+          price: String(totalAmount),
           bookingId,
           customerName: personalDetails.name,
           customerEmail: personalDetails.email,
@@ -431,7 +455,7 @@ const handlePersonalDetailsSubmit = async (e: React.FormEvent) => {
               }
   }}
           initialFocus
-          disabled={(date) => date < new Date()}
+          disabled={(date) => isBefore(date, startOfDay(new Date()))}
           className="rounded-md border-border"
         />
       </PopoverContent>

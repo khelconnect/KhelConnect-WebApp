@@ -1,38 +1,55 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
+import { Loader2 } from "lucide-react"
+import { supabase } from "@/lib/supabaseClient"
+import bcrypt from "bcryptjs"
 
 export default function OwnerLoginPage() {
   const router = useRouter()
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  })
-  const [showPassword, setShowPassword] = useState(false)
+
+
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError("")
 
-    // Simple delay for UX
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    // Fetch owner by email
+    const { data, error: fetchError } = await supabase
+      .from("turf_owners")
+      .select("id, email, password_hash")
+      .eq("email", email)
+      .single()
 
-    // Direct redirect to dashboard
+    if (fetchError || !data) {
+      setError("Invalid email or password")
+      setIsLoading(false)
+      return
+    }
+
+    // Check password using bcrypt
+    const isMatch = await bcrypt.compare(password, data.password_hash)
+
+    if (!isMatch) {
+      setError("Invalid email or password")
+      setIsLoading(false)
+      return
+    }
+
+    // Store session (e.g. in localStorage or Supabase session)
+    localStorage.setItem("owner_id", data.id)
+
+    // Redirect to owner dashboard
     router.push("/owner/dashboard")
   }
 
@@ -41,10 +58,10 @@ export default function OwnerLoginPage() {
       <Card className="bg-card border-border rounded-3xl shadow-lg">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold">Turf Owner Login</CardTitle>
-          <CardDescription>Sign in to manage your turf bookings</CardDescription>
+          <CardDescription>Sign in to manage your turf</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <Input
@@ -52,44 +69,25 @@ export default function OwnerLoginPage() {
                 name="email"
                 type="email"
                 placeholder="john@example.com"
-                value={formData.email}
-                onChange={handleChange}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="bg-secondary border-border"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="bg-secondary border-border"
               />
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Link href="/owner/forgot-password" className="text-sm text-primary hover:underline">
-                  Forgot password?
-                </Link>
-              </div>
-              <div className="relative">
-                <Input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="bg-secondary border-border pr-10"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </Button>
-              </div>
-            </div>
+            {error && <p className="text-sm text-red-500">{error}</p>}
 
             <Button
               type="submit"
@@ -98,22 +96,14 @@ export default function OwnerLoginPage() {
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing In...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Logging In...
                 </>
               ) : (
-                "Sign In"
+                "Login"
               )}
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="flex flex-col space-y-4 text-center">
-          <div className="text-sm text-muted-foreground">
-            Don't have an account?{" "}
-            <Link href="/owner/signup" className="text-primary hover:underline">
-              Sign up
-            </Link>
-          </div>
-        </CardFooter>
       </Card>
     </div>
   )

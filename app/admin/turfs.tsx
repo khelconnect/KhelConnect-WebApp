@@ -48,9 +48,11 @@ export default function TurfAdminPanel() {
     image: '',
     rating: '',
     sports: [] as string[],
+    turf_owner_id: '',
   });
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [inlineData, setInlineData] = useState<any>({});
+  const [owners, setOwners] = useState<any[]>([]);
   const [selectedSport, setSelectedSport] = useState<Record<string, string>>({});
   const [pricingRules, setPricingRules] = useState<Record<string, any[]>>({});
   const [showRuleDialog, setShowRuleDialog] = useState<null | { turfId: string }>(null);
@@ -75,6 +77,7 @@ export default function TurfAdminPanel() {
   useEffect(() => {
     fetchTurfs();
     fetchSlots();
+    fetchOwners();
   }, []);
 
   async function fetchTurfs() {
@@ -87,6 +90,10 @@ export default function TurfAdminPanel() {
     setSlots(data || []);
   }
 
+  async function fetchOwners() {
+  const { data } = await supabase.from('turf_owners').select('id, name');
+  setOwners(data || []);
+}
   async function fetchPricingRules(turfId: string, sport: string) {
     const { data } = await supabase
       .from('turf_prices')
@@ -123,6 +130,7 @@ export default function TurfAdminPanel() {
         .map((a) => a.trim())
         .filter(Boolean),
       sports: formData.sports,
+      turf_owner_id: formData.turf_owner_id,
     };
 
     const { error } = await supabase.from('turfs').insert([payload]);
@@ -137,6 +145,7 @@ export default function TurfAdminPanel() {
         image: '',
         rating: '',
         sports: [],
+        turf_owner_id: '',
       });
       fetchTurfs();
     }
@@ -218,6 +227,27 @@ export default function TurfAdminPanel() {
         </TabsList>
 
         <TabsContent value="add">
+          <div>
+            <Label>Turf Owner</Label>
+            <Select
+              value={formData.turf_owner_id}
+              onValueChange={(value) =>
+              setFormData((prev) => ({ ...prev, turf_owner_id: value }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Owner" />
+            </SelectTrigger>
+            <SelectContent>
+              {owners.map((owner) => (
+                <SelectItem key={owner.id} value={owner.id}>
+                  {owner.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
           <div className="space-y-4 mt-4">
             {Object.keys(formData).map((key) =>
               key !== 'sports' ? (
@@ -256,8 +286,31 @@ export default function TurfAdminPanel() {
                     <CardContent className="space-y-4">
                       {inlineEditingId === turf.id ? (
                         <>
+                          {/* Add Turf Owner Dropdown Here */}
+                          <div>
+                            <Label>Turf Owner</Label>
+                            <Select
+                              value={inlineData.turf_owner_id || ''}
+                              onValueChange={(value) =>
+                                setInlineData((prev: any) => ({ ...prev, turf_owner_id: value }))
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select Owner" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {owners.map((owner) => (
+                                  <SelectItem key={owner.id} value={owner.id}>
+                                    {owner.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                           {Object.keys(turf).map((key) =>
+                            
                             key !== 'id' ? (
+                              
                               <div key={key}>
                                 <Label>{key}</Label>
                                 <Input
