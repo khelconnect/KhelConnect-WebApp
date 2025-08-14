@@ -119,7 +119,7 @@ export default function PaymentPage() {
       })
       setCopied(true)
 
-      const upiUrl = `upi://pay?pa=${upiId}&pn=KhelConnect&am=350&cu=INR&tn=Booking+ID:+${bookingDetails.bookingId}`
+      const upiUrl = `upi://pay?pa=9674785422.etb@icici&pn=KhelConnect&am=350&cu=INR&tn=Booking+ID:+123`
       window.location.href = upiUrl
 
       setTimeout(() => setCopied(false), 1000)
