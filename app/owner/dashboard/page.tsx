@@ -1,277 +1,655 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabaseClient"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Clock, Users, Plus, Trash2 } from "lucide-react"
+import { Clock, Users, Plus, Trash2, Loader2, AlertTriangle, CheckCircle, XCircle, RefreshCw } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
-import { format } from "date-fns"
+import { format, isPast, isSameDay, differenceInHours } from "date-fns"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
-// Types
+// --- TYPES ---
+type TimeSlotDisplay = {
+  id: string
+  time: string
+  endTime: string
+}
+
 type BookingType = {
   id: string
   date: string
   slot: string
+  slotId: string
+  endTime: string
   customerName: string
   customerPhone: string
   customerEmail: string
   sport: string
-  price: number
-  status: "confirmed" | "pending" | "cancelled"
+  price: number // TOTAL price
+  status: string
+  payment_status: string
+  refund_amount: number | null
   source: "app" | "manual"
 }
+
+type GroupedBookingType = {
+  id: string;
+  date: string;
+  slots: string[];
+  slotIds: string[];
+  startTime: string;
+  endTime: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  sport: string;
+  price: number;
+  status: string;
+  payment_status: string;
+  refund_amount: number | null;
+  source: "app" | "manual";
+};
 
 type ManualBlockType = {
   id: string
   date: string
   slot: string
-  reason: string
+  slotId: string
+  reason: string | null
 }
 
+type OwnerType = {
+  id: string
+  name: string
+  turf_name: string
+}
+
+type TurfType = {
+  id: string
+  name: string
+}
+
+// --- HELPER COMPONENT ---
+function DashboardNotice({ message, isError = false }: { message: string, isError?: boolean }) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-6">
+      {isError ? (
+        <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+      ) : (
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+      )}
+      <h3 className="text-xl font-semibold mb-2">{isError ? "An Error Occurred" : "Loading Dashboard"}</h3>
+      <p className="text-muted-foreground max-w-md">{message}</p>
+    </div>
+  )
+}
+
+// --- MAIN COMPONENT ---
 export default function OwnerDashboardPage() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState("bookings")
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
-  const [bookings, setBookings] = useState<BookingType[]>([])
+  
+  // Data State
+  const [owner, setOwner] = useState<OwnerType | null>(null)
+  const [turf, setTurf] = useState<TurfType | null>(null)
+  const [timeSlots, setTimeSlots] = useState<TimeSlotDisplay[]>([])
+  const [bookings, setBookings] = useState<BookingType[]>([]) // Raw
+  const [groupedBookings, setGroupedBookings] = useState<GroupedBookingType[]>([]) // For UI
   const [manualBlocks, setManualBlocks] = useState<ManualBlockType[]>([])
+  const [pendingConfirmation, setPendingConfirmation] = useState<GroupedBookingType[]>([])
+  
+  // UI/Loading State
+  const [isInitializing, setIsInitializing] = useState(true)
+  const [isBookingsLoading, setIsBookingsLoading] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [pageError, setPageError] = useState<string | null>(null)
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
+  const [isBlockModalOpen, setIsBlockModalOpen] = useState(false)
+  
+  // Form State
   const [newBooking, setNewBooking] = useState({
-    customerName: "",
-    customerPhone: "",
-    customerEmail: "",
-    sport: "football",
-    slot: "",
-    price: "",
+    customerName: "", customerPhone: "", customerEmail: "",
+    sport: "football", slotId: "", price: "",
   })
-  const [newBlock, setNewBlock] = useState({
-    slot: "",
-    reason: "",
+  const [newBlock, setNewBlock] = useState({ 
+    slotId: "", reason: "", otherReason: ""
   })
 
-  // Static owner data
-  const owner = {
-    name: "Demo Owner",
-    turfName: "Demo Turf",
-    location: "Demo Location",
-  }
+  // --- DATA FETCHING ---
 
-  // Mock data for demonstration
+  // EFFECT 1: Initialize Dashboard
   useEffect(() => {
-    const mockBookings: BookingType[] = [
-      {
-        id: "book-1",
-        date: format(new Date(), "yyyy-MM-dd"),
-        slot: "6:00 PM",
-        customerName: "Rahul Sharma",
-        customerPhone: "+91 98765 43210",
-        customerEmail: "rahul@example.com",
-        sport: "football",
-        price: 800,
-        status: "confirmed",
-        source: "app",
-      },
-      {
-        id: "book-2",
-        date: format(new Date(), "yyyy-MM-dd"),
-        slot: "7:00 PM",
-        customerName: "Priya Patel",
-        customerPhone: "+91 87654 32109",
-        customerEmail: "priya@example.com",
-        sport: "cricket",
-        price: 900,
-        status: "confirmed",
-        source: "app",
-      },
-      {
-        id: "book-3",
-        date: format(new Date(Date.now() + 86400000), "yyyy-MM-dd"), // Tomorrow
-        slot: "5:00 PM",
-        customerName: "Amit Kumar",
-        customerPhone: "+91 76543 21098",
-        customerEmail: "amit@example.com",
-        sport: "football",
-        price: 800,
-        status: "pending",
-        source: "manual",
-      },
-    ]
+    const initializeDashboard = async () => {
+      setIsInitializing(true)
+      setPageError(null)
+      try {
+        const ownerId = localStorage.getItem("owner_id")
+        if (!ownerId) { router.push("/owner/login"); return }
 
-    const mockBlocks: ManualBlockType[] = [
-      {
-        id: "block-1",
-        date: format(new Date(), "yyyy-MM-dd"),
-        slot: "8:00 PM",
-        reason: "Maintenance",
-      },
-      {
-        id: "block-2",
-        date: format(new Date(Date.now() + 86400000), "yyyy-MM-dd"), // Tomorrow
-        slot: "6:30 PM",
-        reason: "Private Event",
-      },
-    ]
+        const [ownerResult, slotsResult] = await Promise.all([
+          supabase.from("turf_owners").select("*, turfs (id, name)").eq("id", ownerId).single(),
+          supabase.from("time_slots").select("id, start_time, end_time, period").order("start_time")
+        ])
 
-    setBookings(mockBookings)
-    setManualBlocks(mockBlocks)
-  }, [])
+        if (ownerResult.error || !ownerResult.data) {
+          throw new Error("Failed to fetch owner details. Check RLS on 'turf_owners' and 'turfs' tables.")
+        }
+        setOwner(ownerResult.data)
+        const ownerTurfs = ownerResult.data.turfs
+        if (Array.isArray(ownerTurfs) && ownerTurfs.length > 0) {
+          setTurf(ownerTurfs[0])
+        } else {
+          throw new Error("No turf is associated with this owner account in the 'turfs' table.")
+        }
 
-  // Generate time slots from 6 AM to 10 PM in 30-minute increments
-  const generateTimeSlots = () => {
-    const slots = []
-    for (let hour = 6; hour < 22; hour++) {
-      const hourFormatted = hour % 12 === 0 ? 12 : hour % 12
-      const ampm = hour < 12 ? "AM" : "PM"
+        if (slotsResult.error || !slotsResult.data) {
+          throw new Error("Failed to fetch time slots. Check RLS on 'time_slots' table.")
+        }
+        const formattedSlots = slotsResult.data.map((slot) => ({
+          id: slot.id,
+          time: `${slot.start_time}${slot.period ? ` ${slot.period}` : ""}`,
+          endTime: slot.end_time
+        }))
+        setTimeSlots(formattedSlots)
 
-      // First slot of the hour
-      slots.push(`${hourFormatted}:00 ${ampm}`)
-
-      // Second slot of the hour
-      slots.push(`${hourFormatted}:30 ${ampm}`)
+      } catch (error: any) {
+        setPageError(error.message)
+      } finally {
+        setIsInitializing(false)
+      }
     }
-    return slots
-  }
+    initializeDashboard()
+  }, [router])
 
-  const timeSlots = generateTimeSlots()
+  // EFFECT 2: Fetch Bookings
+  useEffect(() => {
+    const fetchBookingsForDate = async () => {
+      if (isInitializing || !turf || timeSlots.length === 0) return
 
-  // Filter bookings and blocks for the selected date
-  const filteredBookings = bookings.filter((booking) => booking.date === format(selectedDate, "yyyy-MM-dd"))
-  const filteredBlocks = manualBlocks.filter((block) => block.date === format(selectedDate, "yyyy-MM-dd"))
+      setIsBookingsLoading(true)
+      setPageError(null)
+      const formattedDate = format(selectedDate, "yyyy-MM-dd")
 
-  // Check if a slot is booked or blocked
-  const isSlotTaken = (slot: string) => {
-    return (
-      filteredBookings.some((booking) => booking.slot === slot) || filteredBlocks.some((block) => block.slot === slot)
+      try {
+        const { data, error } = await supabase
+          .from("bookings")
+          .select("*, users (name, phone, email)")
+          .eq("turf_id", turf.id)
+          .eq("date", formattedDate)
+
+        if (error) {
+          throw new Error("Failed to fetch bookings. Check RLS on 'bookings' and 'users' tables.")
+        }
+
+        const newBookings: BookingType[] = []
+        const newBlocks: ManualBlockType[] = []
+
+        data.forEach((b) => {
+          b.slot.forEach((slotId: string) => {
+            const timeSlot = timeSlots.find(ts => ts.id === slotId)
+            const displayTime = timeSlot ? timeSlot.time : "Unknown Slot"
+            const endTime = timeSlot ? timeSlot.endTime : "00:00"
+            
+            if (b.status === "blocked") {
+              newBlocks.push({
+                id: b.id, date: b.date, slot: displayTime, slotId: slotId,
+                reason: b.sport,
+              })
+            } else {
+              newBookings.push({
+                id: b.id, date: b.date, slot: displayTime, slotId: slotId,
+                endTime: endTime,
+                customerName: b.users?.name || "N/A",
+                customerPhone: b.users?.phone || "N/A",
+                customerEmail: b.users?.email || "N/A",
+                sport: b.sport,
+                price: b.amount,
+                status: b.status,
+                payment_status: b.payment_status,
+                refund_amount: b.refund_amount,
+                source: b.user_id ? "app" : "manual",
+              })
+            }
+          })
+        })
+        setBookings(newBookings)
+        setManualBlocks(newBlocks)
+      } catch (error: any) {
+        setPageError(error.message)
+      } finally {
+        setIsBookingsLoading(false)
+      }
+    }
+    fetchBookingsForDate()
+  }, [selectedDate, turf, timeSlots, isInitializing])
+
+  // EFFECT 3: Group Bookings
+  useEffect(() => {
+    if (timeSlots.length === 0) return;
+
+    const groups: { [key: string]: BookingType[] } = {};
+    for (const booking of bookings) {
+      if (!groups[booking.id]) { groups[booking.id] = [] }
+      groups[booking.id].push(booking);
+    }
+
+    const newGroupedBookings: GroupedBookingType[] = Object.values(groups).map(bookingGroup => {
+      const sortedGroup = bookingGroup.sort((a, b) => {
+        const aIndex = timeSlots.findIndex(ts => ts.id === a.slotId);
+        const bIndex = timeSlots.findIndex(ts => ts.id === b.slotId);
+        return aIndex - bIndex;
+      });
+      const firstSlot = sortedGroup[0];
+      const lastSlot = sortedGroup[sortedGroup.length - 1];
+
+      return {
+        id: firstSlot.id,
+        date: firstSlot.date,
+        slots: sortedGroup.map(b => b.slot),
+        slotIds: sortedGroup.map(b => b.slotId),
+        startTime: firstSlot.slot,
+        endTime: lastSlot.endTime,
+        customerName: firstSlot.customerName,
+        customerPhone: firstSlot.customerPhone,
+        customerEmail: firstSlot.customerEmail,
+        sport: firstSlot.sport,
+        price: firstSlot.price,
+        status: firstSlot.status,
+        payment_status: firstSlot.payment_status,
+        refund_amount: firstSlot.refund_amount,
+        source: firstSlot.source,
+      };
+    });
+    setGroupedBookings(newGroupedBookings);
+  }, [bookings, timeSlots]);
+
+  // EFFECT 4: Check for Post-Booking Confirmation
+  useEffect(() => {
+    const checkPendingConfirmations = () => {
+      const now = new Date()
+      if ((isSameDay(selectedDate, now) || isPast(selectedDate)) && !isInitializing) {
+        const pending = groupedBookings.filter(group => { 
+          if (group.status !== 'confirmed') return false
+          const [hours, minutes] = group.endTime.split(':').map(Number)
+          const bookingEndDateTime = new Date(selectedDate.setHours(hours, minutes, 0, 0))
+          return isPast(bookingEndDateTime)
+        })
+        setPendingConfirmation(pending)
+      } else {
+        setPendingConfirmation([])
+      }
+    }
+    checkPendingConfirmations()
+    const interval = setInterval(checkPendingConfirmations, 300000) 
+    return () => clearInterval(interval)
+  }, [groupedBookings, selectedDate, isInitializing])
+
+
+  // --- DERIVED STATE & MEMOS ---
+  const totalRevenue = useMemo(() => {
+    return groupedBookings.reduce(
+      (sum, group) => group.payment_status === "paid" ? sum + group.price : sum,
+      0
     )
+  }, [groupedBookings])
+
+  const isSlotTaken = useCallback((slotId: string) => {
+    return (
+      bookings.some((b) => 
+        b.slotId === slotId && 
+        b.status !== 'completed' && // <-- CHANGED
+        b.status !== 'cancelled'
+      ) ||
+      manualBlocks.some((b) => b.slotId === slotId)
+    )
+  }, [bookings, manualBlocks])
+
+  // --- CRUD HANDLERS ---
+  const handleAddBooking = async () => {
+    if (!newBooking.customerName || !newBooking.customerPhone || !newBooking.slotId || !newBooking.sport || !newBooking.price || !turf) {
+      alert("Please fill all required fields"); return
+    }
+    setIsSubmitting(true)
+    try {
+      const { data: userData, error: userError } = await supabase
+        .from("users").upsert({
+          name: newBooking.customerName, phone: newBooking.customerPhone,
+          email: newBooking.customerEmail || null,
+        }, { onConflict: "phone" }).select("id").single()
+      if (userError) throw userError
+
+      const { data: bookingData, error: bookingError } = await supabase
+        .from("bookings").insert({
+          turf_id: turf.id,
+          date: format(selectedDate, "yyyy-MM-dd"),
+          slot: [newBooking.slotId],
+          user_id: userData.id,
+          status: "pending",
+          payment_status: "pending",
+          amount: Number(newBooking.price),
+          sport: newBooking.sport,
+        }).select("*, users (name, phone, email)").single()
+      if (bookingError) throw bookingError
+
+      const timeSlot = timeSlots.find(ts => ts.id === bookingData.slot[0])
+      const addedBooking: BookingType = {
+        id: bookingData.id, date: bookingData.date,
+        slot: timeSlot ? timeSlot.time : "Unknown",
+        slotId: bookingData.slot[0],
+        endTime: timeSlot ? timeSlot.endTime : "00:00",
+        customerName: bookingData.users?.name || "N/A",
+        customerPhone: bookingData.users?.phone || "N/A",
+        customerEmail: bookingData.users?.email || "N/A",
+        sport: bookingData.sport, price: bookingData.amount,
+        status: bookingData.status,
+        payment_status: bookingData.payment_status,
+        refund_amount: null,
+        source: "manual",
+      }
+      setBookings(prev => [...prev, addedBooking])
+      setNewBooking({ customerName: "", customerPhone: "", customerEmail: "", sport: "football", slotId: "", price: "" })
+      setIsBookingModalOpen(false)
+    } catch (error: any) {
+      console.error("Error adding booking:", error)
+      alert(`Error: ${error.message}`)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  // Add a new manual booking
-  const handleAddBooking = () => {
-    if (
-      !newBooking.customerName ||
-      !newBooking.customerPhone ||
-      !newBooking.slot ||
-      !newBooking.sport ||
-      !newBooking.price
-    ) {
-      alert("Please fill all required fields")
-      return
+  const handleOpenBlockModal = (slotId: string = "") => {
+    setNewBlock({ slotId: slotId, reason: "", otherReason: "" });
+    setIsBlockModalOpen(true);
+  };
+  
+  const handleAddBlock = async () => {
+    if (!newBlock.slotId) { alert("Please select a slot"); return; }
+    if (!newBlock.reason) { alert("Please select a reason"); return; }
+    if (newBlock.reason === 'Others' && !newBlock.otherReason) {
+      alert("Please specify a reason in the 'Other Reason' field"); return;
     }
+    if (!turf) { alert("Turf is not loaded. Cannot block slot."); return; }
 
-    const booking: BookingType = {
-      id: `book-${Date.now()}`,
-      date: format(selectedDate, "yyyy-MM-dd"),
-      slot: newBooking.slot,
-      customerName: newBooking.customerName,
-      customerPhone: newBooking.customerPhone,
-      customerEmail: newBooking.customerEmail || "-",
-      sport: newBooking.sport,
-      price: Number(newBooking.price),
-      status: "confirmed",
-      source: "manual",
+    setIsSubmitting(true)
+    const reasonToSave = newBlock.reason === 'Others' ? newBlock.otherReason : null;
+    
+    try {
+      const { data: blockData, error: blockError } = await supabase
+        .from("bookings").insert({
+          turf_id: turf.id,
+          date: format(selectedDate, "yyyy-MM-dd"),
+          slot: [newBlock.slotId],
+          user_id: null, status: "blocked", payment_status: "n/a",
+          amount: 0, 
+          sport: reasonToSave,
+        }).select().single()
+      if (blockError) throw blockError
+
+      const timeSlot = timeSlots.find(ts => ts.id === blockData.slot[0])
+      const addedBlock: ManualBlockType = {
+        id: blockData.id, date: blockData.date,
+        slot: timeSlot ? timeSlot.time : "Unknown",
+        slotId: blockData.slot[0],
+        reason: blockData.sport,
+      }
+      setManualBlocks(prev => [...prev, addedBlock])
+      setNewBlock({ slotId: "", reason: "", otherReason: "" })
+      setIsBlockModalOpen(false)
+    } catch (error: any) {
+      console.error("Error adding block:", error)
+      alert(`Error: ${error.message}`)
+    } finally {
+      setIsSubmitting(false)
     }
-
-    setBookings([...bookings, booking])
-    setNewBooking({
-      customerName: "",
-      customerPhone: "",
-      customerEmail: "",
-      sport: "football",
-      slot: "",
-      price: "",
-    })
   }
 
-  // Add a new manual block
-  const handleAddBlock = () => {
-    if (!newBlock.slot || !newBlock.reason) {
-      alert("Please fill all required fields")
-      return
+  const handleCancelBooking = async (id: string) => {
+    const ADVANCE_AMOUNT = 350;
+    
+    const group = groupedBookings.find(g => g.id === id);
+    if (!group) {
+      alert("Error: Could not find booking to cancel.");
+      return;
     }
 
-    const block: ManualBlockType = {
-      id: `block-${Date.now()}`,
-      date: format(selectedDate, "yyyy-MM-dd"),
-      slot: newBlock.slot,
-      reason: newBlock.reason,
+    const firstSlotTime = timeSlots.find(ts => ts.id === group.slotIds[0])?.time.split(' ')[0];
+    if (!firstSlotTime) {
+      alert("Error: Could not parse booking time.");
+      return;
     }
 
-    setManualBlocks([...manualBlocks, block])
-    setNewBlock({
-      slot: "",
-      reason: "",
-    })
+    const [hours, minutes] = firstSlotTime.split(':').map(Number);
+    const bookingDate = new Date(selectedDate); 
+    const bookingStartDateTime = bookingDate.setHours(hours, minutes, 0, 0);
+    const now = new Date();
+    
+    const hoursRemaining = differenceInHours(bookingStartDateTime, now);
+    
+    let refundAmount = 0;
+    let confirmMessage = "";
+
+    if (hoursRemaining < 24) {
+      refundAmount = 0;
+      confirmMessage = `This booking is within 24 hours. The cancellation fee of ₹${ADVANCE_AMOUNT} applies (no refund). Are you sure you want to cancel?`;
+    } else {
+      if (group.payment_status === 'paid') {
+          refundAmount = ADVANCE_AMOUNT; 
+      } else {
+          refundAmount = 0; // 'pending', so no refund
+      }
+      confirmMessage = `This booking is eligible for a refund of ₹${refundAmount}. Proceed to initiate refund?`;
+    }
+
+    if (!confirm(confirmMessage)) return;
+
+    const oldBookings = bookings;
+    setBookings(bookings.map(b => 
+      b.id === id ? { 
+        ...b, 
+        status: 'cancelled',
+        payment_status: 'refund_initiated',
+        refund_amount: refundAmount 
+      } : b
+    ))
+    
+    const { error } = await supabase
+      .from("bookings")
+      .update({ 
+        status: 'cancelled',
+        payment_status: 'refund_initiated',
+        refund_amount: refundAmount 
+      })
+      .eq("id", id);
+      
+    if (error) {
+      console.error("Error initiating refund:", error);
+      alert("Failed to initiate refund.");
+      setBookings(oldBookings);
+    }
   }
 
-  // Delete a booking
-  const handleDeleteBooking = (id: string) => {
-    setBookings(bookings.filter((booking) => booking.id !== id))
+  const handleProcessRefund = async (id: string) => {
+    if (!confirm("Have you processed this refund externally? This action will mark the payment as 'refund processed'.")) return;
+    
+    const oldBookings = bookings;
+    setBookings(bookings.map(b => 
+      b.id === id ? { ...b, payment_status: 'refund processed' } : b // <-- CHANGED
+    ));
+
+    const { error } = await supabase
+      .from("bookings")
+      .update({ 
+        payment_status: 'refund processed' // <-- CHANGED
+      })
+      .eq("id", id);
+      
+    if (error) {
+      console.error("Error processing refund:", error);
+      alert("Failed to process refund.");
+      setBookings(oldBookings);
+    }
   }
 
-  // Delete a block
-  const handleDeleteBlock = (id: string) => {
-    setManualBlocks(manualBlocks.filter((block) => block.id !== id))
+  const handleDeleteBlock = async (id: string) => {
+    if (!confirm("Are you sure you want to remove this block?")) return
+    const oldBlocks = manualBlocks
+    setManualBlocks(manualBlocks.filter((b) => b.id !== id))
+    const { error } = await supabase.from("bookings").delete().eq("id", id)
+    if (error) {
+      console.error("Error removing block:", error)
+      alert("Failed to remove block.")
+      setManualBlocks(oldBlocks)
+    }
+  }
+
+  const handleMarkCompleted = async (id: string) => {
+    if (!confirm("Are you sure you want to mark this booking as completed?")) return;
+    
+    const oldBookings = bookings
+    setBookings(bookings.map(b => 
+      b.id === id ? { ...b, status: 'completed' } : b // <-- CHANGED
+    ))
+    setPendingConfirmation(pendingConfirmation.filter((b) => b.id !== id))
+
+    try {
+      const { data, error } = await supabase
+        .from("bookings")
+        .update({ status: 'completed' }) // <-- CHANGED
+        .eq('id', id)
+        .select()
+      if (error) throw error; 
+      if (data && data[0]) {
+        setBookings(prevBookings => prevBookings.map(b => 
+          b.id === id ? { ...b, status: 'completed' } : b // <-- CHANGED
+        ));
+      } else {
+        setBookings(oldBookings); 
+      }
+    } catch (error: any) {
+      console.error("Error marking as completed:", error)
+      alert("Failed to mark booking as completed.");
+      setBookings(oldBookings)
+    }
+  }
+
+  const handleSignOut = () => {
+    localStorage.removeItem("owner_id")
+    router.push("/owner/login")
+  }
+
+  // --- RENDER LOGIC ---
+
+  if (isInitializing) {
+    return <DashboardNotice message="Loading your dashboard, turf, and time slots..." />
+  }
+  if (pageError && !turf) {
+    return <DashboardNotice message={pageError} isError />
   }
 
   return (
     <div className="space-y-8">
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold mb-2">Turf Owner Dashboard</h1>
           <p className="text-muted-foreground">
-            Manage bookings and availability for <span className="font-medium text-primary">{owner.turfName}</span>
+            Manage bookings for <span className="font-medium text-primary">{turf?.name || "Your Turf"}</span>
           </p>
         </div>
-        <Button variant="outline" className="gap-2" onClick={() => router.push("/owner/login")}>
+        <Button variant="outline" className="gap-2" onClick={handleSignOut}>
           Sign Out
         </Button>
       </div>
+      
+      {/* Pending Confirmation Section */}
+      {pendingConfirmation.length > 0 && (
+        <Card className="bg-card border-border rounded-xl border-primary/50">
+          <CardHeader>
+            <CardTitle className="text-lg text-primary flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" /> Pending Confirmation
+            </CardTitle>
+            <CardDescription>
+              These bookings are finished. Please confirm they were completed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {pendingConfirmation.map(group => (
+              <Card key={group.id} className="bg-secondary border-border p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">
+                        {group.startTime} - {group.endTime} - {group.customerName}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{group.sport} • {group.customerPhone}</p>
+                    </div>
+                  </div>
+                  <Button size="sm" className="bg-primary hover:bg-mint-dark text-white gap-2"
+                    onClick={() => handleMarkCompleted(group.id)}>
+                    <CheckCircle className="h-4 w-4" />
+                    Mark as Completed
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="bg-card border-border rounded-xl">
           <CardHeader className="pb-2">
             <CardTitle className="text-lg">Today's Bookings</CardTitle>
             <CardDescription>
-              {filteredBookings.length} booking{filteredBookings.length !== 1 && "s"} today
+              {groupedBookings.filter(b => b.status !== 'cancelled' && b.status !== 'blocked').length} active booking{groupedBookings.length !== 1 && "s"}
             </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-primary">{filteredBookings.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border rounded-xl">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Blocked Slots</CardTitle>
-            <CardDescription>
-              {filteredBlocks.length} slot{filteredBlocks.length !== 1 && "s"} blocked today
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-primary">{filteredBlocks.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card border-border rounded-xl">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Total Revenue Today</CardTitle>
-            <CardDescription>From all confirmed bookings</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-primary">
-              ₹{filteredBookings.reduce((sum, booking) => sum + booking.price, 0)}
+              {groupedBookings.filter(b => b.status !== 'cancelled' && b.status !== 'blocked').length}
             </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border rounded-xl">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Blocked Slots</CardTitle>
+            <CardDescription>{manualBlocks.length} slot{manualBlocks.length !== 1 && "s"} blocked</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-primary">{manualBlocks.length}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border-border rounded-xl">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Total Paid Revenue</CardTitle>
+            <CardDescription>From all paid bookings</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-primary">₹{totalRevenue}</div>
           </CardContent>
         </Card>
       </div>
 
+      {/* Main Content Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {/* Calendar */}
         <Card className="bg-card border-border rounded-xl md:col-span-1">
           <CardHeader>
             <CardTitle className="text-lg">Select Date</CardTitle>
@@ -286,100 +664,74 @@ export default function OwnerDashboardPage() {
           </CardContent>
         </Card>
 
+        {/* Schedule Tabs */}
         <Card className="bg-card border-border rounded-xl md:col-span-3">
           <CardHeader>
-            <CardTitle className="text-lg">Schedule for {format(selectedDate, "EEEE, MMMM d, yyyy")}</CardTitle>
+            <CardTitle className="text-lg">
+              Schedule for {format(selectedDate, "EEEE, MMMM d, yyyy")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList className="mb-6">
                 <TabsTrigger value="bookings" className="flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Bookings
+                  <Users className="h-4 w-4" /> Bookings
                 </TabsTrigger>
                 <TabsTrigger value="availability" className="flex items-center gap-2">
-                  <Clock className="h-4 w-4" />
-                  Availability
+                  <Clock className="h-4 w-4" /> Availability
                 </TabsTrigger>
               </TabsList>
 
+              {pageError && (
+                <div className="mb-4">
+                  <DashboardNotice message={pageError} isError />
+                </div>
+              )}
+
+              {/* Bookings Tab */}
               <TabsContent value="bookings" className="space-y-6">
                 <div className="flex justify-between items-center">
                   <h3 className="text-lg font-medium">Bookings</h3>
-                  <Dialog>
+                  <Dialog open={isBookingModalOpen} onOpenChange={setIsBookingModalOpen}>
                     <DialogTrigger asChild>
                       <Button className="bg-primary hover:bg-mint-dark text-white gap-2">
-                        <Plus className="h-4 w-4" />
-                        Add Manual Booking
+                        <Plus className="h-4 w-4" /> Add Manual Booking
                       </Button>
                     </DialogTrigger>
+                    {/* Add Booking Dialog */}
                     <DialogContent className="sm:max-w-md bg-card border-border">
-                      <DialogHeader>
-                        <DialogTitle>Add Manual Booking</DialogTitle>
-                      </DialogHeader>
+                      <DialogHeader><DialogTitle>Add Manual Booking</DialogTitle></DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
                           <Label htmlFor="customerName">Customer Name*</Label>
-                          <Input
-                            id="customerName"
-                            value={newBooking.customerName}
-                            onChange={(e) => setNewBooking({ ...newBooking, customerName: e.target.value })}
-                            placeholder="Enter customer name"
-                            className="bg-secondary border-border"
-                          />
+                          <Input id="customerName" value={newBooking.customerName} onChange={(e) => setNewBooking({ ...newBooking, customerName: e.target.value })} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="customerPhone">Phone Number*</Label>
-                          <Input
-                            id="customerPhone"
-                            value={newBooking.customerPhone}
-                            onChange={(e) => setNewBooking({ ...newBooking, customerPhone: e.target.value })}
-                            placeholder="Enter phone number"
-                            className="bg-secondary border-border"
-                          />
+                          <Input id="customerPhone" value={newBooking.customerPhone} onChange={(e) => setNewBooking({ ...newBooking, customerPhone: e.target.value })} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="customerEmail">Email (Optional)</Label>
-                          <Input
-                            id="customerEmail"
-                            value={newBooking.customerEmail}
-                            onChange={(e) => setNewBooking({ ...newBooking, customerEmail: e.target.value })}
-                            placeholder="Enter email address"
-                            className="bg-secondary border-border"
-                          />
+                          <Input id="customerEmail" value={newBooking.customerEmail} onChange={(e) => setNewBooking({ ...newBooking, customerEmail: e.target.value })} />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="sport">Sport*</Label>
-                          <Select
-                            value={newBooking.sport}
-                            onValueChange={(value) => setNewBooking({ ...newBooking, sport: value })}
-                          >
-                            <SelectTrigger className="bg-secondary border-border">
-                              <SelectValue placeholder="Select sport" />
-                            </SelectTrigger>
+                          <Select value={newBooking.sport} onValueChange={(value) => setNewBooking({ ...newBooking, sport: value })}>
+                            <SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="football">Football</SelectItem>
+                              <SelectItem value="football">football</SelectItem>
                               <SelectItem value="cricket">Cricket</SelectItem>
-                              <SelectItem value="pickleball">Pickleball</SelectItem>
-                              <SelectItem value="badminton">Badminton</SelectItem>
-                              <SelectItem value="table-tennis">Table Tennis</SelectItem>
-                              <SelectItem value="basketball">Basketball</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="slot">Time Slot*</Label>
-                          <Select
-                            value={newBooking.slot}
-                            onValueChange={(value) => setNewBooking({ ...newBooking, slot: value })}
-                          >
-                            <SelectTrigger className="bg-secondary border-border">
-                              <SelectValue placeholder="Select time slot" />
-                            </SelectTrigger>
+                          <Select value={newBooking.slotId} onValueChange={(value) => setNewBooking({ ...newBooking, slotId: value })}>
+                            <SelectTrigger><SelectValue placeholder="Select time slot" /></SelectTrigger>
                             <SelectContent>
                               {timeSlots.map((slot) => (
-                                <SelectItem key={slot} value={slot} disabled={isSlotTaken(slot)}>
-                                  {slot} {isSlotTaken(slot) && "(Unavailable)"}
+                                <SelectItem key={slot.id} value={slot.id} disabled={isSlotTaken(slot.id)}>
+                                  {slot.time} {isSlotTaken(slot.id) && "(Unavailable)"}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -387,70 +739,117 @@ export default function OwnerDashboardPage() {
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="price">Price (₹)*</Label>
-                          <Input
-                            id="price"
-                            value={newBooking.price}
-                            onChange={(e) => setNewBooking({ ...newBooking, price: e.target.value })}
-                            placeholder="Enter price"
-                            type="number"
-                            className="bg-secondary border-border"
-                          />
+                          <Input id="price" value={newBooking.price} type="number" onChange={(e) => setNewBooking({ ...newBooking, price: e.target.value })} />
                         </div>
-                        <Button onClick={handleAddBooking} className="w-full bg-primary hover:bg-mint-dark text-white">
-                          Add Booking
+                        <Button onClick={handleAddBooking} className="w-full" disabled={isSubmitting}>
+                          {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Add Booking"}
                         </Button>
                       </div>
                     </DialogContent>
                   </Dialog>
                 </div>
 
-                {filteredBookings.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    No bookings for this date. Add a manual booking or wait for customers to book.
-                  </div>
+                {isBookingsLoading ? (
+                  <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                ) : groupedBookings.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">No bookings for this date.</div>
                 ) : (
                   <div className="space-y-4">
-                    {filteredBookings.map((booking) => (
-                      <Card key={booking.id} className="bg-secondary border-border">
+                    {groupedBookings.map((group) => (
+                      <Card 
+                        key={group.id} 
+                        className={cn(
+                          "bg-secondary border-border",
+                          group.status === 'cancelled' && "opacity-50 bg-secondary/50"
+                        )}
+                      >
                         <CardContent className="p-4">
                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="flex items-start gap-4">
                               <div className="bg-primary/10 p-3 rounded-full">
-                                <Clock className="h-5 w-5 text-primary" />
+                                {group.status === 'cancelled' ? <XCircle className="h-5 w-5 text-red-500" /> 
+                                : <Clock className="h-5 w-5 text-primary" />}
                               </div>
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <h4 className="font-medium">{booking.slot}</h4>
-                                  <Badge
-                                    variant={booking.source === "app" ? "default" : "outline"}
-                                    className={cn(
-                                      "text-xs",
-                                      booking.source === "app"
-                                        ? "bg-primary text-white"
-                                        : "bg-secondary text-primary border-primary",
-                                    )}
-                                  >
-                                    {booking.source === "app" ? "App Booking" : "Manual Entry"}
+                                  <h4 className={cn("font-medium", group.status === 'cancelled' && "line-through")}>
+                                    {group.startTime} - {group.endTime}
+                                  </h4>
+                                  <Badge variant={group.source === "app" ? "default" : "outline"} className={cn("text-xs", group.source === "app" ? "bg-primary text-white" : "bg-secondary text-primary border-primary")}>
+                                    {group.source === "app" ? "App Booking" : "Manual Entry"}
                                   </Badge>
                                 </div>
-                                <p className="text-sm text-muted-foreground">
-                                  {booking.customerName} • {booking.customerPhone}
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                  {booking.sport.charAt(0).toUpperCase() + booking.sport.slice(1)} • ₹{booking.price}
-                                </p>
+                                <p className="text-sm text-muted-foreground">{group.customerName} • {group.customerPhone}</p>
+                                <p className="text-sm text-muted-foreground">{group.sport} • ₹{group.price}</p>
+                                
+                                {/* Updated Badges */}
+                                <div className="flex items-center gap-2 mt-1">
+                                  <Badge variant={'secondary'} className={cn("capitalize",
+                                      group.status === 'confirmed' ? 'bg-green-600 text-white' :
+                                      group.status === 'pending' ? 'bg-yellow-500 text-black' :
+                                      group.status === 'completed' ? 'bg-blue-600 text-white' : // <-- CHANGED
+                                      group.status === 'cancelled' ? 'bg-red-600 text-white' : '')}>
+                                    {group.status}
+                                  </Badge>
+                                  <Badge variant={'secondary'} className={cn("capitalize",
+                                    group.payment_status === 'paid' ? 'bg-green-600 text-white' : 
+                                    group.payment_status === 'refund processed' ? 'bg-blue-500 text-white' : // <-- CHANGED
+                                    group.payment_status === 'refund_initiated' ? 'bg-orange-500 text-white' :
+                                    group.payment_status === 'pending' ? 'bg-red-500 text-white' : '')}>
+                                    Payment: {group.payment_status.replace('_', ' ')}
+                                  </Badge>
+                                  {group.refund_amount != null && (
+                                    <Badge variant="outline" className="text-xs border-orange-500 text-orange-500">
+                                      Refund: ₹{group.refund_amount}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </div>
+                            
+                            {/* === UPDATED BUTTON LOGIC === */}
                             <div className="flex items-center gap-2 ml-auto">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                onClick={() => handleDeleteBooking(booking.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {/* Show Cancel Button */}
+                              {(group.status === 'pending' || group.status === 'confirmed') && (
+                                <Button
+                                  variant="ghost" size="icon"
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => handleCancelBooking(group.id)}
+                                  title="Cancel Booking"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                              
+                              {/* Show Completed Icon */}
+                              {group.status === 'completed' && ( // <-- CHANGED
+                                <Button variant="ghost" size="icon" className="text-green-600" disabled title="Completed">
+                                  <CheckCircle className="h-4 w-4" />
+                                </Button>
+                              )}
+
+                              {/* Show Cancelled & Refunded Icon */}
+                              {group.status === 'cancelled' && group.payment_status === 'refund processed' && ( // <-- CHANGED
+                                <Button variant="ghost" size="icon" className="text-red-500" disabled title="Cancelled & Refund Processed">
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                              )}
+
+                              {/* Show Process Refund Button */}
+                              {group.status === 'cancelled' && group.payment_status === 'refund_initiated' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="gap-2 border-primary text-primary hover:bg-primary/10 hover:text-primary"
+                                  onClick={() => handleProcessRefund(group.id)}
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                  Process Refund (₹{group.refund_amount})
+                                </Button>
+                              )}
                             </div>
+                            {/* === END UPDATED BUTTON LOGIC === */}
+
                           </div>
                         </CardContent>
                       </Card>
@@ -459,103 +858,127 @@ export default function OwnerDashboardPage() {
                 )}
               </TabsContent>
 
+              {/* Availability Tab */}
               <TabsContent value="availability" className="space-y-6">
                 <div className="flex justify-between items-center">
                   <h3 className="text-lg font-medium">Blocked Slots</h3>
-                  <Dialog>
+                  <Dialog open={isBlockModalOpen} onOpenChange={setIsBlockModalOpen}>
                     <DialogTrigger asChild>
-                      <Button className="bg-primary hover:bg-mint-dark text-white gap-2">
-                        <Plus className="h-4 w-4" />
-                        Block Slot
+                      <Button className="bg-primary hover:bg-mint-dark text-white gap-2" onClick={() => handleOpenBlockModal("")}>
+                        <Plus className="h-4 w-4" /> Block Slot
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-md bg-card border-border">
-                      <DialogHeader>
-                        <DialogTitle>Block Time Slot</DialogTitle>
-                      </DialogHeader>
+                      <DialogHeader><DialogTitle>Block Time Slot</DialogTitle></DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <Label htmlFor="slot">Time Slot*</Label>
-                          <Select
-                            value={newBlock.slot}
-                            onValueChange={(value) => setNewBlock({ ...newBlock, slot: value })}
+                          <Label htmlFor="slot-block">Time Slot*</Label>
+                          <Select 
+                            value={newBlock.slotId} 
+                            onValueChange={(value) => setNewBlock({ ...newBlock, slotId: value })}
+                            disabled={!!newBlock.slotId}
                           >
-                            <SelectTrigger className="bg-secondary border-border">
+                            <SelectTrigger id="slot-block">
                               <SelectValue placeholder="Select time slot" />
                             </SelectTrigger>
                             <SelectContent>
                               {timeSlots.map((slot) => (
-                                <SelectItem key={slot} value={slot} disabled={isSlotTaken(slot)}>
-                                  {slot} {isSlotTaken(slot) && "(Unavailable)"}
+                                <SelectItem key={slot.id} value={slot.id} disabled={isSlotTaken(slot.id)}>
+                                  {slot.time} {isSlotTaken(slot.id) && "(Unavailable)"}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="reason">Reason*</Label>
-                          <Input
-                            id="reason"
-                            value={newBlock.reason}
-                            onChange={(e) => setNewBlock({ ...newBlock, reason: e.target.value })}
-                            placeholder="Enter reason for blocking"
-                            className="bg-secondary border-border"
-                          />
+                          <Label htmlFor="reason-select">Reason*</Label>
+                          <Select value={newBlock.reason} onValueChange={(value) => setNewBlock({ ...newBlock, reason: value })}>
+                            <SelectTrigger id="reason-select">
+                              <SelectValue placeholder="Select a reason" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Booked (Offline)">Booked (Offline)</SelectItem>
+                              <SelectItem value="Others">Others</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
-                        <Button onClick={handleAddBlock} className="w-full bg-primary hover:bg-mint-dark text-white">
-                          Block Slot
+                        {newBlock.reason === 'Others' && (
+                          <div className="space-y-2">
+                            <Label htmlFor="other-reason">Other Reason*</Label>
+                            <Input 
+                              id="other-reason" 
+                              value={newBlock.otherReason} 
+                              onChange={(e) => setNewBlock({ ...newBlock, otherReason: e.target.value })} 
+                              placeholder="e.g., Maintenance" 
+                            />
+                          </div>
+                        )}
+                        <Button onClick={handleAddBlock} className="w-full" disabled={isSubmitting}>
+                          {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Block Slot"}
                         </Button>
                       </div>
                     </DialogContent>
                   </Dialog>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {timeSlots.map((slot) => {
-                    const booking = filteredBookings.find((b) => b.slot === slot)
-                    const block = filteredBlocks.find((b) => b.slot === slot)
-                    const isAvailable = !booking && !block
+                {isBookingsLoading ? (
+                  <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {timeSlots.map((slot) => {
+                      const booking = bookings.find((b) => b.slotId === slot.id) // Check raw bookings
+                      const block = manualBlocks.find((b) => b.slotId === slot.id)
+                      const isAvailable = !booking && !block
+                      
+                      let statusText = "Available"
+                      if (block) {
+                        statusText = `Blocked: ${block.reason || 'Offline'}`
+                      } else if (booking) {
+                        if (booking.status === 'completed') { // <-- CHANGED
+                          statusText = `Completed: ${booking.customerName}`
+                        } else if (booking.status === 'cancelled') {
+                          statusText = `Cancelled: ${booking.customerName}` 
+                        } else {
+                          statusText = `Booked: ${booking.customerName}`
+                        }
+                      }
+                      
+                      const isClickable = !isSlotTaken(slot.id) && !block
 
-                    return (
-                      <Card
-                        key={slot}
-                        className={cn(
-                          "border",
-                          isAvailable
-                            ? "bg-secondary/50 border-border"
-                            : booking
-                              ? "bg-primary/10 border-primary/30"
-                              : "bg-destructive/10 border-destructive/30",
-                        )}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="font-medium">{slot}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {isAvailable
-                                  ? "Available"
-                                  : booking
-                                    ? `Booked: ${booking.customerName}`
-                                    : `Blocked: ${block?.reason}`}
-                              </p>
+                      return (
+                        <Card 
+                          key={slot.id}
+                          onClick={() => isClickable ? handleOpenBlockModal(slot.id) : undefined}
+                          className={cn("border", 
+                            isClickable ? "bg-secondary/50 cursor-pointer hover:border-primary" 
+                            : block ? "bg-destructive/10 border-destructive/30"
+                            : booking?.status === 'completed' ? "bg-green-700/10 border-green-700/30" // <-- CHANGED
+                            : booking?.status === 'cancelled' ? "bg-red-500/10 border-red-500/30"
+                            : "bg-primary/10 border-primary/30"
+                          )}>
+                          <CardContent className="p-4">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <p className="font-medium">{slot.time}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {statusText}
+                                </p>
+                              </div>
+                              {block && (
+                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteBlock(block.id);
+                                }}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
-                            {block && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                onClick={() => handleDeleteBlock(block.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
-                </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </CardContent>

@@ -126,10 +126,12 @@ export default function TurfsPage() {
           >
             <div className="aspect-video relative">
               <img src={turf.image || "/placeholder.svg"} alt={turf.name} className="w-full h-full object-cover" />
-              <div className="absolute top-4 right-4 bg-primary rounded-full px-3 py-1.5 flex items-center shadow-md">
-                <Star className="h-5 w-5 text-white fill-white mr-1.5" />
-                <span className="font-medium text-base text-white">{turf.rating}</span>
-              </div>
+              {turf.rating && (
+  <div className="absolute top-4 right-4 bg-primary rounded-full px-3 py-1.5 flex items-center shadow-md">
+    <Star className="h-5 w-5 text-white fill-white mr-1.5" />
+    <span className="font-medium text-base text-white">{turf.rating}</span>
+  </div>
+)}
             </div>
             <CardContent className="p-8">
               <div className="flex justify-between items-start mb-3">

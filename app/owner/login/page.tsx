@@ -2,55 +2,56 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link" // Import Link
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Loader2 } from "lucide-react"
-import { supabase } from "@/lib/supabaseClient"
-import bcrypt from "bcryptjs"
+// 🚨 REMOVED: import { supabase } from "@/lib/supabaseClient"
+// 🚨 REMOVED: import bcrypt from "bcryptjs" 
 
 export default function OwnerLoginPage() {
   const router = useRouter()
-
-
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
 
+  /**
+   * 🔒 SECURE LOGIN HANDLER
+   * This function now sends the email/password to a server-side
+   * API route instead of pulling the password hash to the client.
+   */
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError("")
 
-    // Fetch owner by email
-    const { data, error: fetchError } = await supabase
-      .from("turf_owners")
-      .select("id, email, password_hash")
-      .eq("email", email)
-      .single()
+    try {
+      const response = await fetch("/api/owner/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
 
-    if (fetchError || !data) {
-      setError("Invalid email or password")
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Login failed")
+      }
+
+      // Store session
+      localStorage.setItem("owner_id", data.id)
+
+      // Redirect to owner dashboard
+      router.push("/owner/dashboard")
+      
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
       setIsLoading(false)
-      return
     }
-
-    // Check password using bcrypt
-    const isMatch = await bcrypt.compare(password, data.password_hash)
-
-    if (!isMatch) {
-      setError("Invalid email or password")
-      setIsLoading(false)
-      return
-    }
-
-    // Store session (e.g. in localStorage or Supabase session)
-    localStorage.setItem("owner_id", data.id)
-
-    // Redirect to owner dashboard
-    router.push("/owner/dashboard")
   }
 
   return (
@@ -103,6 +104,19 @@ export default function OwnerLoginPage() {
               )}
             </Button>
           </form>
+
+          {/* === ADDED SECTION === */}
+          <div className="mt-4 text-center text-sm">
+            New?{" "}
+            <Link 
+              href="/owner/signup" 
+              className="underline text-primary hover:text-primary/80 font-medium"
+            >
+              Sign up
+            </Link>
+          </div>
+          {/* === END ADDED SECTION === */}
+          
         </CardContent>
       </Card>
     </div>

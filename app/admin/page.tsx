@@ -11,6 +11,7 @@ import UsersTab from "./users";
 import BookingsTab from "./bookings";
 import PaymentsTab from "./payments";
 import TurfsTab from "./turfs";
+import OwnersTab from "./owners";
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState({
@@ -44,11 +45,12 @@ export default function AdminDashboard() {
       </div>
 
       <Tabs defaultValue="users" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 mb-6">
+        <TabsList className="grid w-full grid-cols-5 mb-6">
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="bookings">Bookings</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="turfs">Turfs</TabsTrigger>
+          <TabsTrigger value="owners">Owners</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users">
@@ -62,6 +64,9 @@ export default function AdminDashboard() {
         </TabsContent>
         <TabsContent value="turfs">
           <TurfsTab />
+        </TabsContent>
+        <TabsContent value="owners">
+          <OwnersTab />
         </TabsContent>
       </Tabs>
     </main>
