@@ -6,7 +6,9 @@ import { supabase } from "@/lib/supabaseClient"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Clock, Users, Plus, Trash2, Loader2, AlertTriangle, CheckCircle, XCircle, RefreshCw } from "lucide-react"
+import { 
+  Clock, Users, Plus, Trash2, Loader2, AlertTriangle, CheckCircle, XCircle, RefreshCw, ShieldAlert, CalendarIcon 
+} from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { format, isPast, isSameDay, differenceInHours } from "date-fns"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +18,14 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
 } from "@/components/ui/dialog"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { ScrollArea } from "@/components/ui/scroll-area" // Import ScrollArea
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -83,7 +92,7 @@ type TurfType = {
   name: string
 }
 
-// --- HELPER COMPONENT ---
+// --- HELPER COMPONENT for Loading/Error ---
 function DashboardNotice({ message, isError = false }: { message: string, isError?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-6">
@@ -97,6 +106,58 @@ function DashboardNotice({ message, isError = false }: { message: string, isErro
     </div>
   )
 }
+
+// --- Unverified State Component ---
+function UnverifiedDashboard({ ownerName }: { ownerName?: string }) {
+  const router = useRouter();
+  const handleSignOut = () => {
+    localStorage.removeItem("owner_id");
+    router.push("/owner/login");
+  };
+
+  return (
+    <div className="relative space-y-6 md:space-y-8">
+      {/* 1. The Overlay Message */}
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-4 text-center bg-background/80 backdrop-blur-sm rounded-3xl">
+        <div className="max-w-md w-full p-6 sm:p-8 bg-card border rounded-3xl shadow-2xl">
+          <ShieldAlert className="h-12 w-12 sm:h-16 sm:w-16 text-primary mx-auto mb-4" />
+          <h2 className="text-2xl sm:text-3xl font-bold mb-3">
+            Welcome, {ownerName || "Owner"}!
+          </h2>
+          <p className="text-base sm:text-lg text-muted-foreground mb-6">
+            Your account is pending verification. Please sit tight! Our admin team will review your application and activate your turf dashboard shortly.
+          </p>
+          <Button variant="outline" className="gap-2" onClick={handleSignOut}>
+            Sign Out
+          </Button>
+        </div>
+      </div>
+      
+      {/* 2. The Static Blurred Dashboard Behind It */}
+      <div className="space-y-6 md:space-y-8 blur-md">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold mb-2">Turf Owner Dashboard</h1>
+            <p className="text-muted-foreground">
+              Manage bookings for <span className="font-medium text-primary">Your Turf</span>
+            </p>
+          </div>
+          <Button variant="outline" className="gap-2" disabled>Sign Out</Button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+          <Card className="bg-card border-border rounded-xl"><CardHeader className="pb-2"><CardTitle className="text-lg">Today's Bookings</CardTitle><CardDescription>0 bookings today</CardDescription></CardHeader><CardContent><div className="text-3xl font-bold text-primary">0</div></CardContent></Card>
+          <Card className="bg-card border-border rounded-xl"><CardHeader className="pb-2"><CardTitle className="text-lg">Blocked Slots</CardTitle><CardDescription>0 slots blocked</CardDescription></CardHeader><CardContent><div className="text-3xl font-bold text-primary">0</div></CardContent></Card>
+          <Card className="bg-card border-border rounded-xl"><CardHeader className="pb-2"><CardTitle className="text-lg">Total Paid Revenue</CardTitle><CardDescription>From all paid bookings</CardDescription></CardHeader><CardContent><div className="text-3xl font-bold text-primary">₹0</div></CardContent></Card>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
+          <Card className="bg-card border-border rounded-xl md:col-span-1"><CardHeader><CardTitle className="text-lg">Select Date</CardTitle></CardHeader><CardContent><Calendar mode="single" selected={new Date()} disabled className="rounded-md border-border" /></CardContent></Card>
+          <Card className="bg-card border-border rounded-xl md:col-span-3"><CardHeader><CardTitle className="text-lg">Schedule</CardTitle></CardHeader><CardContent><div className="text-center py-12 text-muted-foreground">Dashboard is inactive</div></CardContent></Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 // --- MAIN COMPONENT ---
 export default function OwnerDashboardPage() {
@@ -120,6 +181,7 @@ export default function OwnerDashboardPage() {
   const [pageError, setPageError] = useState<string | null>(null)
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false)
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false) // For mobile popover
   
   // Form State
   const [newBooking, setNewBooking] = useState({
@@ -149,12 +211,13 @@ export default function OwnerDashboardPage() {
         if (ownerResult.error || !ownerResult.data) {
           throw new Error("Failed to fetch owner details. Check RLS on 'turf_owners' and 'turfs' tables.")
         }
-        setOwner(ownerResult.data)
-        const ownerTurfs = ownerResult.data.turfs
+        setOwner(ownerResult.data);
+        
+        const ownerTurfs = ownerResult.data.turfs;
         if (Array.isArray(ownerTurfs) && ownerTurfs.length > 0) {
-          setTurf(ownerTurfs[0])
+          setTurf(ownerTurfs[0]);
         } else {
-          throw new Error("No turf is associated with this owner account in the 'turfs' table.")
+          console.log("Owner loaded, but no turf associated. Showing pending screen.");
         }
 
         if (slotsResult.error || !slotsResult.data) {
@@ -178,9 +241,9 @@ export default function OwnerDashboardPage() {
 
   // EFFECT 2: Fetch Bookings
   useEffect(() => {
-    const fetchBookingsForDate = async () => {
-      if (isInitializing || !turf || timeSlots.length === 0) return
+    if (isInitializing || !turf || timeSlots.length === 0) return
 
+    const fetchBookingsForDate = async () => {
       setIsBookingsLoading(true)
       setPageError(null)
       const formattedDate = format(selectedDate, "yyyy-MM-dd")
@@ -241,13 +304,11 @@ export default function OwnerDashboardPage() {
   // EFFECT 3: Group Bookings
   useEffect(() => {
     if (timeSlots.length === 0) return;
-
     const groups: { [key: string]: BookingType[] } = {};
     for (const booking of bookings) {
       if (!groups[booking.id]) { groups[booking.id] = [] }
       groups[booking.id].push(booking);
     }
-
     const newGroupedBookings: GroupedBookingType[] = Object.values(groups).map(bookingGroup => {
       const sortedGroup = bookingGroup.sort((a, b) => {
         const aIndex = timeSlots.findIndex(ts => ts.id === a.slotId);
@@ -256,7 +317,6 @@ export default function OwnerDashboardPage() {
       });
       const firstSlot = sortedGroup[0];
       const lastSlot = sortedGroup[sortedGroup.length - 1];
-
       return {
         id: firstSlot.id,
         date: firstSlot.date,
@@ -312,7 +372,7 @@ export default function OwnerDashboardPage() {
     return (
       bookings.some((b) => 
         b.slotId === slotId && 
-        b.status !== 'completed' && // <-- CHANGED
+        b.status !== 'completed' && 
         b.status !== 'cancelled'
       ) ||
       manualBlocks.some((b) => b.slotId === slotId)
@@ -332,7 +392,6 @@ export default function OwnerDashboardPage() {
           email: newBooking.customerEmail || null,
         }, { onConflict: "phone" }).select("id").single()
       if (userError) throw userError
-
       const { data: bookingData, error: bookingError } = await supabase
         .from("bookings").insert({
           turf_id: turf.id,
@@ -345,7 +404,6 @@ export default function OwnerDashboardPage() {
           sport: newBooking.sport,
         }).select("*, users (name, phone, email)").single()
       if (bookingError) throw bookingError
-
       const timeSlot = timeSlots.find(ts => ts.id === bookingData.slot[0])
       const addedBooking: BookingType = {
         id: bookingData.id, date: bookingData.date,
@@ -399,7 +457,6 @@ export default function OwnerDashboardPage() {
           sport: reasonToSave,
         }).select().single()
       if (blockError) throw blockError
-
       const timeSlot = timeSlots.find(ts => ts.id === blockData.slot[0])
       const addedBlock: ManualBlockType = {
         id: blockData.id, date: blockData.date,
@@ -420,63 +477,32 @@ export default function OwnerDashboardPage() {
 
   const handleCancelBooking = async (id: string) => {
     const ADVANCE_AMOUNT = 350;
-    
     const group = groupedBookings.find(g => g.id === id);
-    if (!group) {
-      alert("Error: Could not find booking to cancel.");
-      return;
-    }
-
+    if (!group) { alert("Error: Could not find booking to cancel."); return; }
     const firstSlotTime = timeSlots.find(ts => ts.id === group.slotIds[0])?.time.split(' ')[0];
-    if (!firstSlotTime) {
-      alert("Error: Could not parse booking time.");
-      return;
-    }
-
+    if (!firstSlotTime) { alert("Error: Could not parse booking time."); return; }
     const [hours, minutes] = firstSlotTime.split(':').map(Number);
     const bookingDate = new Date(selectedDate); 
     const bookingStartDateTime = bookingDate.setHours(hours, minutes, 0, 0);
     const now = new Date();
-    
     const hoursRemaining = differenceInHours(bookingStartDateTime, now);
-    
     let refundAmount = 0;
     let confirmMessage = "";
-
     if (hoursRemaining < 24) {
       refundAmount = 0;
       confirmMessage = `This booking is within 24 hours. The cancellation fee of ₹${ADVANCE_AMOUNT} applies (no refund). Are you sure you want to cancel?`;
     } else {
-      if (group.payment_status === 'paid') {
-          refundAmount = ADVANCE_AMOUNT; 
-      } else {
-          refundAmount = 0; // 'pending', so no refund
-      }
+      if (group.payment_status === 'paid') { refundAmount = ADVANCE_AMOUNT; }
+      else { refundAmount = 0; }
       confirmMessage = `This booking is eligible for a refund of ₹${refundAmount}. Proceed to initiate refund?`;
     }
-
     if (!confirm(confirmMessage)) return;
-
     const oldBookings = bookings;
-    setBookings(bookings.map(b => 
-      b.id === id ? { 
-        ...b, 
-        status: 'cancelled',
-        payment_status: 'refund_initiated',
-        refund_amount: refundAmount 
-      } : b
-    ))
-    
-    const { error } = await supabase
-      .from("bookings")
-      .update({ 
-        status: 'cancelled',
-        payment_status: 'refund_initiated',
-        refund_amount: refundAmount 
-      })
-      .eq("id", id);
-      
-    if (error) {
+    setBookings(bookings.map(b => b.id === id ? { ...b, status: 'cancelled', payment_status: 'refund_initiated', refund_amount: refundAmount } : b ))
+    try {
+      const { error } = await supabase.from("bookings").update({ status: 'cancelled', payment_status: 'refund_initiated', refund_amount: refundAmount }).eq("id", id);
+      if (error) throw error;
+    } catch (error: any) {
       console.error("Error initiating refund:", error);
       alert("Failed to initiate refund.");
       setBookings(oldBookings);
@@ -485,20 +511,12 @@ export default function OwnerDashboardPage() {
 
   const handleProcessRefund = async (id: string) => {
     if (!confirm("Have you processed this refund externally? This action will mark the payment as 'refund processed'.")) return;
-    
     const oldBookings = bookings;
-    setBookings(bookings.map(b => 
-      b.id === id ? { ...b, payment_status: 'refund processed' } : b // <-- CHANGED
-    ));
-
-    const { error } = await supabase
-      .from("bookings")
-      .update({ 
-        payment_status: 'refund processed' // <-- CHANGED
-      })
-      .eq("id", id);
-      
-    if (error) {
+    setBookings(bookings.map(b => b.id === id ? { ...b, payment_status: 'refund processed' } : b ));
+    try {
+      const { error } = await supabase.from("bookings").update({ payment_status: 'refund processed' }).eq("id", id);
+      if (error) throw error;
+    } catch (error: any) {
       console.error("Error processing refund:", error);
       alert("Failed to process refund.");
       setBookings(oldBookings);
@@ -509,8 +527,10 @@ export default function OwnerDashboardPage() {
     if (!confirm("Are you sure you want to remove this block?")) return
     const oldBlocks = manualBlocks
     setManualBlocks(manualBlocks.filter((b) => b.id !== id))
-    const { error } = await supabase.from("bookings").delete().eq("id", id)
-    if (error) {
+    try {
+      const { error } = await supabase.from("bookings").delete().eq("id", id)
+      if (error) throw error;
+    } catch (error: any) {
       console.error("Error removing block:", error)
       alert("Failed to remove block.")
       setManualBlocks(oldBlocks)
@@ -519,24 +539,14 @@ export default function OwnerDashboardPage() {
 
   const handleMarkCompleted = async (id: string) => {
     if (!confirm("Are you sure you want to mark this booking as completed?")) return;
-    
     const oldBookings = bookings
-    setBookings(bookings.map(b => 
-      b.id === id ? { ...b, status: 'completed' } : b // <-- CHANGED
-    ))
+    setBookings(bookings.map(b => b.id === id ? { ...b, status: 'completed' } : b))
     setPendingConfirmation(pendingConfirmation.filter((b) => b.id !== id))
-
     try {
-      const { data, error } = await supabase
-        .from("bookings")
-        .update({ status: 'completed' }) // <-- CHANGED
-        .eq('id', id)
-        .select()
+      const { data, error } = await supabase.from("bookings").update({ status: 'completed' }).eq('id', id).select()
       if (error) throw error; 
       if (data && data[0]) {
-        setBookings(prevBookings => prevBookings.map(b => 
-          b.id === id ? { ...b, status: 'completed' } : b // <-- CHANGED
-        ));
+        setBookings(prevBookings => prevBookings.map(b => b.id === id ? { ...b, status: 'completed' } : b));
       } else {
         setBookings(oldBookings); 
       }
@@ -555,23 +565,26 @@ export default function OwnerDashboardPage() {
   // --- RENDER LOGIC ---
 
   if (isInitializing) {
-    return <DashboardNotice message="Loading your dashboard, turf, and time slots..." />
+    return <DashboardNotice message="Verifying your account..." />
   }
-  if (pageError && !turf) {
+  if (pageError) {
     return <DashboardNotice message={pageError} isError />
+  }
+  if (!turf) {
+    return <UnverifiedDashboard ownerName={owner?.name} />;
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Turf Owner Dashboard</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold mb-2">Turf Owner Dashboard</h1>
           <p className="text-muted-foreground">
-            Manage bookings for <span className="font-medium text-primary">{turf?.name || "Your Turf"}</span>
+            Manage bookings for <span className="font-medium text-primary">{turf.name}</span>
           </p>
         </div>
-        <Button variant="outline" className="gap-2" onClick={handleSignOut}>
+        <Button variant="outline" className="gap-2 w-full sm:w-auto" onClick={handleSignOut}>
           Sign Out
         </Button>
       </div>
@@ -613,47 +626,34 @@ export default function OwnerDashboardPage() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
         <Card className="bg-card border-border rounded-xl">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Today's Bookings</CardTitle>
-            <CardDescription>
-              {groupedBookings.filter(b => b.status !== 'cancelled' && b.status !== 'blocked').length} active booking{groupedBookings.length !== 1 && "s"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-primary">
-              {groupedBookings.filter(b => b.status !== 'cancelled' && b.status !== 'blocked').length}
-            </div>
-          </CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-lg">Today's Bookings</CardTitle><CardDescription>
+            {groupedBookings.filter(b => b.status !== 'cancelled' && b.status !== 'blocked').length} active booking{groupedBookings.length !== 1 && "s"}
+          </CardDescription></CardHeader>
+          <CardContent><div className="text-3xl font-bold text-primary">
+            {groupedBookings.filter(b => b.status !== 'cancelled' && b.status !== 'blocked').length}
+          </div></CardContent>
         </Card>
         <Card className="bg-card border-border rounded-xl">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Blocked Slots</CardTitle>
-            <CardDescription>{manualBlocks.length} slot{manualBlocks.length !== 1 && "s"} blocked</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-primary">{manualBlocks.length}</div>
-          </CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-lg">Blocked Slots</CardTitle><CardDescription>
+            {manualBlocks.length} slot{manualBlocks.length !== 1 && "s"} blocked
+          </CardDescription></CardHeader>
+          <CardContent><div className="text-3xl font-bold text-primary">{manualBlocks.length}</div></CardContent>
         </Card>
-        <Card className="bg-card border-border rounded-xl">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Total Paid Revenue</CardTitle>
-            <CardDescription>From all paid bookings</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-primary">₹{totalRevenue}</div>
-          </CardContent>
+        <Card className="bg-card border-border rounded-xl sm:col-span-2 md:col-span-1">
+          <CardHeader className="pb-2"><CardTitle className="text-lg">Total Paid Revenue</CardTitle><CardDescription>
+            From all paid bookings
+          </CardDescription></CardHeader>
+          <CardContent><div className="text-3xl font-bold text-primary">₹{totalRevenue}</div></CardContent>
         </Card>
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {/* Calendar */}
-        <Card className="bg-card border-border rounded-xl md:col-span-1">
-          <CardHeader>
-            <CardTitle className="text-lg">Select Date</CardTitle>
-          </CardHeader>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
+        {/* Calendar (Desktop) */}
+        <Card className="hidden md:block md:col-span-1 bg-card border-border rounded-xl">
+          <CardHeader><CardTitle className="text-lg">Select Date</CardTitle></CardHeader>
           <CardContent>
             <Calendar
               mode="single"
@@ -664,16 +664,40 @@ export default function OwnerDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Schedule Tabs */}
-        <Card className="bg-card border-border rounded-xl md:col-span-3">
+        {/* Schedule Tabs (All Screens) */}
+        <Card className="col-span-1 md:col-span-3 bg-card border-border rounded-xl">
           <CardHeader>
-            <CardTitle className="text-lg">
+            {/* Desktop Title */}
+            <CardTitle className="hidden md:block text-lg">
               Schedule for {format(selectedDate, "EEEE, MMMM d, yyyy")}
             </CardTitle>
+            {/* Mobile Title + Popover Trigger */}
+            <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="md:hidden text-lg font-semibold w-full justify-start px-1"
+                >
+                  {format(selectedDate, "EEEE, MMMM d, yyyy")}
+                  <CalendarIcon className="ml-auto h-4 w-4 text-muted-foreground" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={(date) => {
+                    if (date) setSelectedDate(date);
+                    setIsCalendarOpen(false);
+                  }}
+                  className="rounded-md border-border"
+                />
+              </PopoverContent>
+            </Popover>
           </CardHeader>
           <CardContent>
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="mb-6">
+              <TabsList className="mb-6 w-full grid grid-cols-2">
                 <TabsTrigger value="bookings" className="flex items-center gap-2">
                   <Users className="h-4 w-4" /> Bookings
                 </TabsTrigger>
@@ -695,56 +719,59 @@ export default function OwnerDashboardPage() {
                   <Dialog open={isBookingModalOpen} onOpenChange={setIsBookingModalOpen}>
                     <DialogTrigger asChild>
                       <Button className="bg-primary hover:bg-mint-dark text-white gap-2">
-                        <Plus className="h-4 w-4" /> Add Manual Booking
+                        <Plus className="h-4 w-4" />
+                        <span className="hidden sm:inline">Add Booking</span>
                       </Button>
                     </DialogTrigger>
                     {/* Add Booking Dialog */}
                     <DialogContent className="sm:max-w-md bg-card border-border">
                       <DialogHeader><DialogTitle>Add Manual Booking</DialogTitle></DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="customerName">Customer Name*</Label>
-                          <Input id="customerName" value={newBooking.customerName} onChange={(e) => setNewBooking({ ...newBooking, customerName: e.target.value })} />
+                      <ScrollArea className="max-h-[70vh] sm:max-h-none">
+                        <div className="space-y-4 py-4 px-6 sm:px-0">
+                          <div className="space-y-2">
+                            <Label htmlFor="customerName">Customer Name*</Label>
+                            <Input id="customerName" value={newBooking.customerName} onChange={(e) => setNewBooking({ ...newBooking, customerName: e.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="customerPhone">Phone Number*</Label>
+                            <Input id="customerPhone" value={newBooking.customerPhone} onChange={(e) => setNewBooking({ ...newBooking, customerPhone: e.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="customerEmail">Email (Optional)</Label>
+                            <Input id="customerEmail" value={newBooking.customerEmail} onChange={(e) => setNewBooking({ ...newBooking, customerEmail: e.target.value })} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="sport">Sport*</Label>
+                            <Select value={newBooking.sport} onValueChange={(value) => setNewBooking({ ...newBooking, sport: value })}>
+                              <SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="football">football</SelectItem>
+                                <SelectItem value="cricket">Cricket</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="slot">Time Slot*</Label>
+                            <Select value={newBooking.slotId} onValueChange={(value) => setNewBooking({ ...newBooking, slotId: value })}>
+                              <SelectTrigger><SelectValue placeholder="Select time slot" /></SelectTrigger>
+                              <SelectContent>
+                                {timeSlots.map((slot) => (
+                                  <SelectItem key={slot.id} value={slot.id} disabled={isSlotTaken(slot.id)}>
+                                    {slot.time} {isSlotTaken(slot.id) && "(Unavailable)"}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="price">Price (₹)*</Label>
+                            <Input id="price" value={newBooking.price} type="number" onChange={(e) => setNewBooking({ ...newBooking, price: e.target.value })} />
+                          </div>
+                          <Button onClick={handleAddBooking} className="w-full" disabled={isSubmitting}>
+                            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Add Booking"}
+                          </Button>
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="customerPhone">Phone Number*</Label>
-                          <Input id="customerPhone" value={newBooking.customerPhone} onChange={(e) => setNewBooking({ ...newBooking, customerPhone: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="customerEmail">Email (Optional)</Label>
-                          <Input id="customerEmail" value={newBooking.customerEmail} onChange={(e) => setNewBooking({ ...newBooking, customerEmail: e.target.value })} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="sport">Sport*</Label>
-                          <Select value={newBooking.sport} onValueChange={(value) => setNewBooking({ ...newBooking, sport: value })}>
-                            <SelectTrigger><SelectValue placeholder="Select sport" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="football">football</SelectItem>
-                              <SelectItem value="cricket">Cricket</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="slot">Time Slot*</Label>
-                          <Select value={newBooking.slotId} onValueChange={(value) => setNewBooking({ ...newBooking, slotId: value })}>
-                            <SelectTrigger><SelectValue placeholder="Select time slot" /></SelectTrigger>
-                            <SelectContent>
-                              {timeSlots.map((slot) => (
-                                <SelectItem key={slot.id} value={slot.id} disabled={isSlotTaken(slot.id)}>
-                                  {slot.time} {isSlotTaken(slot.id) && "(Unavailable)"}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="price">Price (₹)*</Label>
-                          <Input id="price" value={newBooking.price} type="number" onChange={(e) => setNewBooking({ ...newBooking, price: e.target.value })} />
-                        </div>
-                        <Button onClick={handleAddBooking} className="w-full" disabled={isSubmitting}>
-                          {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Add Booking"}
-                        </Button>
-                      </div>
+                      </ScrollArea>
                     </DialogContent>
                   </Dialog>
                 </div>
@@ -764,9 +791,9 @@ export default function OwnerDashboardPage() {
                         )}
                       >
                         <CardContent className="p-4">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-start gap-4">
-                              <div className="bg-primary/10 p-3 rounded-full">
+                              <div className="bg-primary/10 p-3 rounded-full hidden sm:flex">
                                 {group.status === 'cancelled' ? <XCircle className="h-5 w-5 text-red-500" /> 
                                 : <Clock className="h-5 w-5 text-primary" />}
                               </div>
@@ -776,24 +803,23 @@ export default function OwnerDashboardPage() {
                                     {group.startTime} - {group.endTime}
                                   </h4>
                                   <Badge variant={group.source === "app" ? "default" : "outline"} className={cn("text-xs", group.source === "app" ? "bg-primary text-white" : "bg-secondary text-primary border-primary")}>
-                                    {group.source === "app" ? "App Booking" : "Manual Entry"}
+                                    {group.source === "app" ? "App" : "Manual"}
                                   </Badge>
                                 </div>
                                 <p className="text-sm text-muted-foreground">{group.customerName} • {group.customerPhone}</p>
                                 <p className="text-sm text-muted-foreground">{group.sport} • ₹{group.price}</p>
                                 
-                                {/* Updated Badges */}
-                                <div className="flex items-center gap-2 mt-1">
+                                <div className="flex flex-wrap items-center gap-2 mt-2">
                                   <Badge variant={'secondary'} className={cn("capitalize",
                                       group.status === 'confirmed' ? 'bg-green-600 text-white' :
                                       group.status === 'pending' ? 'bg-yellow-500 text-black' :
-                                      group.status === 'completed' ? 'bg-blue-600 text-white' : // <-- CHANGED
+                                      group.status === 'completed' ? 'bg-blue-600 text-white' :
                                       group.status === 'cancelled' ? 'bg-red-600 text-white' : '')}>
                                     {group.status}
                                   </Badge>
                                   <Badge variant={'secondary'} className={cn("capitalize",
                                     group.payment_status === 'paid' ? 'bg-green-600 text-white' : 
-                                    group.payment_status === 'refund processed' ? 'bg-blue-500 text-white' : // <-- CHANGED
+                                    group.payment_status === 'refund processed' ? 'bg-blue-500 text-white' :
                                     group.payment_status === 'refund_initiated' ? 'bg-orange-500 text-white' :
                                     group.payment_status === 'pending' ? 'bg-red-500 text-white' : '')}>
                                     Payment: {group.payment_status.replace('_', ' ')}
@@ -807,9 +833,7 @@ export default function OwnerDashboardPage() {
                               </div>
                             </div>
                             
-                            {/* === UPDATED BUTTON LOGIC === */}
                             <div className="flex items-center gap-2 ml-auto">
-                              {/* Show Cancel Button */}
                               {(group.status === 'pending' || group.status === 'confirmed') && (
                                 <Button
                                   variant="ghost" size="icon"
@@ -821,21 +845,18 @@ export default function OwnerDashboardPage() {
                                 </Button>
                               )}
                               
-                              {/* Show Completed Icon */}
-                              {group.status === 'completed' && ( // <-- CHANGED
+                              {group.status === 'completed' && (
                                 <Button variant="ghost" size="icon" className="text-green-600" disabled title="Completed">
                                   <CheckCircle className="h-4 w-4" />
                                 </Button>
                               )}
 
-                              {/* Show Cancelled & Refunded Icon */}
-                              {group.status === 'cancelled' && group.payment_status === 'refund processed' && ( // <-- CHANGED
+                              {group.status === 'cancelled' && group.payment_status === 'refund processed' && (
                                 <Button variant="ghost" size="icon" className="text-red-500" disabled title="Cancelled & Refund Processed">
                                   <XCircle className="h-4 w-4" />
                                 </Button>
                               )}
 
-                              {/* Show Process Refund Button */}
                               {group.status === 'cancelled' && group.payment_status === 'refund_initiated' && (
                                 <Button
                                   size="sm"
@@ -848,8 +869,6 @@ export default function OwnerDashboardPage() {
                                 </Button>
                               )}
                             </div>
-                            {/* === END UPDATED BUTTON LOGIC === */}
-
                           </div>
                         </CardContent>
                       </Card>
@@ -864,13 +883,15 @@ export default function OwnerDashboardPage() {
                   <h3 className="text-lg font-medium">Blocked Slots</h3>
                   <Dialog open={isBlockModalOpen} onOpenChange={setIsBlockModalOpen}>
                     <DialogTrigger asChild>
-                      <Button className="bg-primary hover:bg-mint-dark text-white gap-2" onClick={() => handleOpenBlockModal("")}>
-                        <Plus className="h-4 w-4" /> Block Slot
+                      <Button className="bg-primary hover:bg-mint-dark text-white gap-2">
+                        <Plus className="h-4 w-4" /> 
+                        <span className="hidden sm:inline">Block Slot</span>
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-md bg-card border-border">
                       <DialogHeader><DialogTitle>Block Time Slot</DialogTitle></DialogHeader>
-                      <div className="space-y-4 py-4">
+                      <ScrollArea className="max-h-[70vh] sm:max-h-none">
+                      <div className="space-y-4 py-4 px-6 sm:px-0">
                         <div className="space-y-2">
                           <Label htmlFor="slot-block">Time Slot*</Label>
                           <Select 
@@ -917,6 +938,7 @@ export default function OwnerDashboardPage() {
                           {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Block Slot"}
                         </Button>
                       </div>
+                      </ScrollArea>
                     </DialogContent>
                   </Dialog>
                 </div>
@@ -924,9 +946,9 @@ export default function OwnerDashboardPage() {
                 {isBookingsLoading ? (
                   <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
                     {timeSlots.map((slot) => {
-                      const booking = bookings.find((b) => b.slotId === slot.id) // Check raw bookings
+                      const booking = bookings.find((b) => b.slotId === slot.id)
                       const block = manualBlocks.find((b) => b.slotId === slot.id)
                       const isAvailable = !booking && !block
                       
@@ -934,7 +956,7 @@ export default function OwnerDashboardPage() {
                       if (block) {
                         statusText = `Blocked: ${block.reason || 'Offline'}`
                       } else if (booking) {
-                        if (booking.status === 'completed') { // <-- CHANGED
+                        if (booking.status === 'completed') {
                           statusText = `Completed: ${booking.customerName}`
                         } else if (booking.status === 'cancelled') {
                           statusText = `Cancelled: ${booking.customerName}` 
@@ -952,20 +974,20 @@ export default function OwnerDashboardPage() {
                           className={cn("border", 
                             isClickable ? "bg-secondary/50 cursor-pointer hover:border-primary" 
                             : block ? "bg-destructive/10 border-destructive/30"
-                            : booking?.status === 'completed' ? "bg-green-700/10 border-green-700/30" // <-- CHANGED
+                            : booking?.status === 'completed' ? "bg-green-700/10 border-green-700/30"
                             : booking?.status === 'cancelled' ? "bg-red-500/10 border-red-500/30"
                             : "bg-primary/10 border-primary/30"
                           )}>
-                          <CardContent className="p-4">
+                          <CardContent className="p-3 sm:p-4">
                             <div className="flex justify-between items-center">
                               <div>
                                 <p className="font-medium">{slot.time}</p>
-                                <p className="text-sm text-muted-foreground">
+                                <p className="text-sm text-muted-foreground truncate">
                                   {statusText}
                                 </p>
                               </div>
                               {block && (
-                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={(e) => {
+                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10 -mr-2" onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeleteBlock(block.id);
                                 }}>

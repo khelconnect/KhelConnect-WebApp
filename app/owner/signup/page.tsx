@@ -7,10 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2 } from "lucide-react"
-import { supabase } from "@/lib/supabaseClient" // Make sure this exists
-import bcrypt from "bcryptjs"
-import { Eye, EyeOff } from "lucide-react" // Import Eye and EyeOff components
+import { Loader2, Eye, EyeOff } from "lucide-react"
 
 export default function OwnerSignupPage() {
   const router = useRouter()
@@ -37,7 +34,7 @@ export default function OwnerSignupPage() {
     setIsLoading(true)
     setError("")
 
-    const { name, email, password, confirmPassword, turfName, location, phone } = formData
+    const { password, confirmPassword, ...restOfData } = formData
 
     if (password !== confirmPassword) {
       setError("Passwords do not match")
@@ -46,40 +43,34 @@ export default function OwnerSignupPage() {
     }
 
     try {
-      const hashedPassword = await bcrypt.hash(password, 10)
-
-      const { error } = await supabase.from("turf_owners").insert({
-        name,
-        email,
-        password_hash: hashedPassword,
-        turf_name: turfName,
-        location,
-        phone,
+      // 🔒 Send data to our secure API route
+      const response = await fetch("/api/owner/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password, ...restOfData }), // Send all data
       })
 
-      if (error) {
-        if (error.message.includes("duplicate key")) {
-          setError("Email already in use")
-        } else {
-          setError("Signup failed. Please try again.")
-        }
-        setIsLoading(false)
-        return
-      }
-    // Simple delay for UX
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+      const data = await response.json()
 
-    // Direct redirect to dashboard
-    router.push("/owner/login")
-    } catch (err) {
+      if (!response.ok) {
+        throw new Error(data.error || "Signup failed. Please try again.")
+      }
+
+      // Success
+      alert("Account created successfully! Please log in.")
+      router.push("/owner/login")
+
+    } catch (err: any) {
       console.error("Signup error:", err)
-      setError("Unexpected error occurred.")
+      setError(err.message)
+    } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="container max-w-md mx-auto py-12 px-4">
+    // UPDATED: Changed py-12 to py-6 sm:py-12 for better mobile padding
+    <div className="container max-w-md mx-auto py-6 sm:py-12 px-4">
       <Card className="bg-card border-border rounded-3xl shadow-lg">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold">Turf Owner Sign Up</CardTitle>
@@ -89,7 +80,7 @@ export default function OwnerSignupPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && <p className="text-sm text-red-500 text-center">{error}</p>}
             
-<InputField id="name" label="Full Name" value={formData.name} onChange={handleChange} />
+            <InputField id="name" label="Full Name" value={formData.name} onChange={handleChange} />
             <InputField id="email" label="Email Address" type="email" value={formData.email} onChange={handleChange} />
 
             <PasswordField
@@ -131,7 +122,8 @@ export default function OwnerSignupPage() {
 
             <Button
               type="submit"
-              className="w-full bg-primary hover:bg-mint-dark text-white rounded-full py-6"
+              // UPDATED: Changed py-6 to py-4 sm:py-6 and adjusted text size
+              className="w-full bg-primary hover:bg-mint-dark text-white rounded-full py-4 sm:py-6 text-base sm:text-lg"
               disabled={isLoading}
             >
               {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating Account...</> : "Sign Up"}
@@ -142,6 +134,7 @@ export default function OwnerSignupPage() {
     </div>
   )
 }
+
 // Custom reusable field components
 function InputField({ id, label, type = "text", value, onChange }: any) {
   return (

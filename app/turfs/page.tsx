@@ -5,11 +5,12 @@ export const dynamic = "force-dynamic";
 import { useSearchParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
-import { MapPin, Star, ArrowRight, ArrowLeft } from "lucide-react"
+import { MapPin, Star, ArrowRight, ArrowLeft, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
+import { cn } from "@/lib/utils" // Import cn utility
 
 interface Turf {
   id: string
@@ -48,6 +49,8 @@ export default function TurfsPage() {
   }
 
   useEffect(() => {
+    setLoading(true)
+    setTurfs([])
     fetchTurfs()
   }, [sport])
 
@@ -70,13 +73,18 @@ export default function TurfsPage() {
   }
 
   const sportIcon = sportIcons[sport as keyof typeof sportIcons] || sportIcons.football
+  const sportName = sportNames[sport as keyof typeof sportNames] || "Sport"
 
   const handleSelectTurf = (turfId: string) => {
     router.push(`/booking?sport=${sport}&turf=${turfId}`)
   }
 
+  // --- Main Render ---
   return (
+    // This is the original, correct main container
     <main className="container mx-auto px-6 py-12">
+      
+      {/* This heading section stays at the top */}
       <div className="mb-12 max-w-5xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <Button variant="ghost" size="sm" asChild className="gap-2 text-foreground">
@@ -91,86 +99,159 @@ export default function TurfsPage() {
           >
             <img
               src={sportIcon || "/placeholder.svg"}
-              alt={sportNames[sport as keyof typeof sportNames]}
+              alt={sportName}
               className="h-4 w-4 mr-2"
             />
-            {sportNames[sport as keyof typeof sportNames] || "Sport"}
+            {sportName}
           </Badge>
         </div>
 
         <h1 className="text-4xl font-bold mb-4 flex items-center gap-3">
           <img
             src={sportIcon || "/placeholder.svg"}
-            alt={sportNames[sport as keyof typeof sportNames]}
+            alt={sportName}
             className="h-10 w-10"
           />
-          {sportNames[sport as keyof typeof sportNames] || "Sport"} Turfs in Kolkata
+          {sportName} Turfs in Kolkata
         </h1>
         <p className="text-lg text-muted-foreground">
           Select a turf to view available time slots and make your booking
         </p>
       </div>
 
-      {loading ? (
-        <p className="text-center">Loading turfs...</p>
-      ) : (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12 max-w-5xl mx-auto">
-        {turfs.length === 0 ? (
-          <p className="text-center col-span-full">No turfs found for {sportNames[sport as keyof typeof sportNames]}.</p>
-        ) : (
-        turfs.map((turf) => (
-          <Card
-            key={turf.id}
-            className="overflow-hidden hover:shadow-xl transition-all hover:border-primary cursor-pointer bg-card border-border rounded-3xl"
-            onClick={() => handleSelectTurf(turf.id)}
-          >
-            <div className="aspect-video relative">
-              <img src={turf.image || "/placeholder.svg"} alt={turf.name} className="w-full h-full object-cover" />
-              {turf.rating && (
-  <div className="absolute top-4 right-4 bg-primary rounded-full px-3 py-1.5 flex items-center shadow-md">
-    <Star className="h-5 w-5 text-white fill-white mr-1.5" />
-    <span className="font-medium text-base text-white">{turf.rating}</span>
-  </div>
-)}
-            </div>
-            <CardContent className="p-8">
-              <div className="flex justify-between items-start mb-3">
-                <h2 className="text-2xl font-semibold">{turf.name}</h2>
-                <Badge
-                  variant="secondary"
-                  className="ml-2 bg-primary text-primary-foreground text-base px-3 py-1 rounded-full"
-                >
-                  ₹{turf.price}
-                </Badge>
-              </div>
-
-              <div className="flex items-center text-muted-foreground mb-4 text-base">
-                <MapPin className="h-5 w-5 mr-2 flex-shrink-0" />
-                <span className="mr-2">{turf.location}</span>
-                <span className="text-sm">({turf.distance})</span>
-              </div>
-
-              <div className="flex flex-wrap gap-2 mb-6">
-                {turf.amenities.map((amenity) => (
-                  <Badge
-                    key={amenity}
-                    variant="outline"
-                    className="bg-secondary border-border text-base px-3 py-1 rounded-full"
-                  >
-                    {amenity}
-                  </Badge>
-                ))}
-              </div>
-
-              <Button className="w-full mt-2 bg-primary hover:bg-mint-dark text-white text-base py-6 rounded-full">
-                Select This Turf
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </CardContent>
-          </Card>
-        )))}
+      {/* This div wraps all content *below* the header */}
+      <div className="max-w-5xl mx-auto">
+        {loading && (
+          <SkeletonGrid />
+        )}
+        
+        {turfs.length > 0 && !loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            {turfs.map((turf) => (
+              <Card
+                key={turf.id}
+                className="overflow-hidden hover:shadow-xl transition-all hover:border-primary cursor-pointer bg-card border-border rounded-3xl"
+                onClick={() => handleSelectTurf(turf.id)}
+              >
+                <div className="aspect-video relative">
+                  <img src={turf.image || "/placeholder.svg"} alt={turf.name} className="w-full h-full object-cover" />
+                  {turf.rating && (
+                    <div className="absolute top-4 right-4 bg-primary rounded-full px-3 py-1.5 flex items-center shadow-md">
+                      <Star className="h-5 w-5 text-white fill-white mr-1.5" />
+                      <span className="font-medium text-base text-white">{turf.rating}</span>
+                    </div>
+                  )}
+                </div>
+                <CardContent className="p-8">
+                  <div className="flex justify-between items-start mb-3">
+                    <h2 className="text-2xl font-semibold">{turf.name}</h2>
+                    <Badge
+                      variant="secondary"
+                      className="ml-2 bg-primary text-primary-foreground text-base px-3 py-1 rounded-full"
+                    >
+                      ₹{turf.price}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center text-muted-foreground mb-4 text-base">
+                    <MapPin className="h-5 w-5 mr-2 flex-shrink-0" />
+                    <span className="mr-2">{turf.location}</span>
+                    <span className="text-sm">({turf.distance})</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mb-6">
+                    {turf.amenities.map((amenity) => (
+                      <Badge
+                        key={amenity}
+                        variant="outline"
+                        className="bg-secondary border-border text-base px-3 py-1 rounded-full"
+                      >
+                        {amenity}
+                      </Badge>
+                    ))}
+                  </div>
+                  <Button className="w-full mt-2 bg-primary hover:bg-mint-dark text-white text-base py-6 rounded-full">
+                    Select This Turf
+                    <ArrowRight className="ml-2 h-5 w-5" />
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+        
+        {turfs.length === 0 && !loading && (
+          <ComingSoonView sportName={sportName} />
+        )}
       </div>
-      )}
     </main>
   )
+}
+
+// ==================================================================
+// --- HELPER COMPONENTS ---
+// ==================================================================
+
+/**
+ * A single placeholder card that mimics the TurfCard layout.
+ */
+function TurfCardSkeleton() {
+  return (
+    <Card className="overflow-hidden bg-card border-border rounded-3xl">
+      <div className="aspect-video relative bg-secondary animate-pulse" />
+      <CardContent className="p-8">
+        <div className="flex justify-between items-start mb-3">
+          <div className="h-7 w-3/5 bg-secondary rounded animate-pulse" />
+          <div className="h-7 w-1/4 bg-secondary rounded-full animate-pulse" />
+        </div>
+        <div className="h-5 w-2/5 bg-secondary rounded animate-pulse mb-4" />
+        <div className="flex flex-wrap gap-2 mb-6">
+          <div className="h-6 w-1/4 bg-secondary rounded-full animate-pulse" />
+          <div className="h-6 w-1/3 bg-secondary rounded-full animate-pulse" />
+        </div>
+        <div className="h-12 w-full bg-secondary rounded-full animate-pulse" />
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Renders a grid of skeleton cards.
+ */
+function SkeletonGrid() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+      <TurfCardSkeleton />
+      <TurfCardSkeleton />
+    </div>
+  );
+}
+
+/**
+ * The "Coming Soon" view. This component now renders directly onto the
+ * page background, centered in the available space.
+ */
+function ComingSoonView({ sportName }: { sportName: string }) {
+  return (
+    // This div will create the vertical space to center the message
+    <div className="flex flex-col items-center justify-center text-center min-h-[50vh] p-6">
+      {/* This is the main content, no card, no shadow */}
+      <div className="max-w-md p-8"> 
+        <Badge 
+          variant="outline"
+          // UPDATED: Added Tailwind classes for a thin green border and text
+          className={cn(
+            "mb-4 text-base py-1.5 px-4 rounded-full",
+            "border-green-500 text-green-500 bg-transparent"
+          )}
+        >
+          Coming Soon
+        </Badge>
+        <h2 className="text-3xl font-bold mb-3">
+          {sportName} Turfs
+        </h2>
+        <p className="text-lg text-muted-foreground">
+          We're working hard to bring {sportName} turfs to our platform. Please check back soon!
+        </p>
+      </div>
+    </div>
+  );
 }
