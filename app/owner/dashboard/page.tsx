@@ -25,7 +25,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { ScrollArea } from "@/components/ui/scroll-area" // Import ScrollArea
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -181,7 +181,7 @@ export default function OwnerDashboardPage() {
   const [pageError, setPageError] = useState<string | null>(null)
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false)
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false)
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false) // For mobile popover
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   
   // Form State
   const [newBooking, setNewBooking] = useState({
@@ -346,7 +346,8 @@ export default function OwnerDashboardPage() {
         const pending = groupedBookings.filter(group => { 
           if (group.status !== 'confirmed') return false
           const [hours, minutes] = group.endTime.split(':').map(Number)
-          const bookingEndDateTime = new Date(selectedDate.setHours(hours, minutes, 0, 0))
+          const bookingEndDateTime = new Date(selectedDate); // Clone date
+          bookingEndDateTime.setHours(hours, minutes, 0, 0);
           return isPast(bookingEndDateTime)
         })
         setPendingConfirmation(pending)
@@ -378,9 +379,20 @@ export default function OwnerDashboardPage() {
       manualBlocks.some((b) => b.slotId === slotId)
     )
   }, [bookings, manualBlocks])
+  
+  // --- OPTIMIZATION / NEW FEATURE ---
+  // Helper function to check if a slot's end time is in the past
+  const isSlotInPast = useCallback((slotEndTime: string): boolean => {
+    const now = new Date();
+    const [hours, minutes] = slotEndTime.split(':').map(Number);
+    const slotEndDateTime = new Date(selectedDate.getTime());
+    slotEndDateTime.setHours(hours, minutes, 0, 0);
+    return isPast(slotEndDateTime);
+  }, [selectedDate]);
 
-  // --- CRUD HANDLERS ---
-  const handleAddBooking = async () => {
+
+  // --- CRUD HANDLERS (OPTIMIZED) ---
+  const handleAddBooking = useCallback(async () => {
     if (!newBooking.customerName || !newBooking.customerPhone || !newBooking.slotId || !newBooking.sport || !newBooking.price || !turf) {
       alert("Please fill all required fields"); return
     }
@@ -392,6 +404,7 @@ export default function OwnerDashboardPage() {
           email: newBooking.customerEmail || null,
         }, { onConflict: "phone" }).select("id").single()
       if (userError) throw userError
+      
       const { data: bookingData, error: bookingError } = await supabase
         .from("bookings").insert({
           turf_id: turf.id,
@@ -404,6 +417,7 @@ export default function OwnerDashboardPage() {
           sport: newBooking.sport,
         }).select("*, users (name, phone, email)").single()
       if (bookingError) throw bookingError
+      
       const timeSlot = timeSlots.find(ts => ts.id === bookingData.slot[0])
       const addedBooking: BookingType = {
         id: bookingData.id, date: bookingData.date,
@@ -428,14 +442,14 @@ export default function OwnerDashboardPage() {
     } finally {
       setIsSubmitting(false)
     }
-  }
+  }, [newBooking, turf, selectedDate, timeSlots, bookings]);
 
-  const handleOpenBlockModal = (slotId: string = "") => {
+  const handleOpenBlockModal = useCallback((slotId: string = "") => {
     setNewBlock({ slotId: slotId, reason: "", otherReason: "" });
     setIsBlockModalOpen(true);
-  };
+  }, [setNewBlock, setIsBlockModalOpen]);
   
-  const handleAddBlock = async () => {
+  const handleAddBlock = useCallback(async () => {
     if (!newBlock.slotId) { alert("Please select a slot"); return; }
     if (!newBlock.reason) { alert("Please select a reason"); return; }
     if (newBlock.reason === 'Others' && !newBlock.otherReason) {
@@ -457,6 +471,7 @@ export default function OwnerDashboardPage() {
           sport: reasonToSave,
         }).select().single()
       if (blockError) throw blockError
+      
       const timeSlot = timeSlots.find(ts => ts.id === blockData.slot[0])
       const addedBlock: ManualBlockType = {
         id: blockData.id, date: blockData.date,
@@ -473,16 +488,16 @@ export default function OwnerDashboardPage() {
     } finally {
       setIsSubmitting(false)
     }
-  }
+  }, [newBlock, turf, selectedDate, timeSlots, manualBlocks]);
 
-  const handleCancelBooking = async (id: string) => {
+  const handleCancelBooking = useCallback(async (id: string) => {
     const ADVANCE_AMOUNT = 350;
     const group = groupedBookings.find(g => g.id === id);
     if (!group) { alert("Error: Could not find booking to cancel."); return; }
     const firstSlotTime = timeSlots.find(ts => ts.id === group.slotIds[0])?.time.split(' ')[0];
     if (!firstSlotTime) { alert("Error: Could not parse booking time."); return; }
     const [hours, minutes] = firstSlotTime.split(':').map(Number);
-    const bookingDate = new Date(selectedDate); 
+    const bookingDate = new Date(selectedDate.getTime()); 
     const bookingStartDateTime = bookingDate.setHours(hours, minutes, 0, 0);
     const now = new Date();
     const hoursRemaining = differenceInHours(bookingStartDateTime, now);
@@ -497,8 +512,10 @@ export default function OwnerDashboardPage() {
       confirmMessage = `This booking is eligible for a refund of ₹${refundAmount}. Proceed to initiate refund?`;
     }
     if (!confirm(confirmMessage)) return;
+    
     const oldBookings = bookings;
     setBookings(bookings.map(b => b.id === id ? { ...b, status: 'cancelled', payment_status: 'refund_initiated', refund_amount: refundAmount } : b ))
+    
     try {
       const { error } = await supabase.from("bookings").update({ status: 'cancelled', payment_status: 'refund_initiated', refund_amount: refundAmount }).eq("id", id);
       if (error) throw error;
@@ -507,9 +524,9 @@ export default function OwnerDashboardPage() {
       alert("Failed to initiate refund.");
       setBookings(oldBookings);
     }
-  }
+  }, [groupedBookings, bookings, timeSlots, selectedDate]);
 
-  const handleProcessRefund = async (id: string) => {
+  const handleProcessRefund = useCallback(async (id: string) => {
     if (!confirm("Have you processed this refund externally? This action will mark the payment as 'refund processed'.")) return;
     const oldBookings = bookings;
     setBookings(bookings.map(b => b.id === id ? { ...b, payment_status: 'refund processed' } : b ));
@@ -521,9 +538,9 @@ export default function OwnerDashboardPage() {
       alert("Failed to process refund.");
       setBookings(oldBookings);
     }
-  }
+  }, [bookings]);
 
-  const handleDeleteBlock = async (id: string) => {
+  const handleDeleteBlock = useCallback(async (id: string) => {
     if (!confirm("Are you sure you want to remove this block?")) return
     const oldBlocks = manualBlocks
     setManualBlocks(manualBlocks.filter((b) => b.id !== id))
@@ -535,9 +552,9 @@ export default function OwnerDashboardPage() {
       alert("Failed to remove block.")
       setManualBlocks(oldBlocks)
     }
-  }
+  }, [manualBlocks]);
 
-  const handleMarkCompleted = async (id: string) => {
+  const handleMarkCompleted = useCallback(async (id: string) => {
     if (!confirm("Are you sure you want to mark this booking as completed?")) return;
     const oldBookings = bookings
     setBookings(bookings.map(b => b.id === id ? { ...b, status: 'completed' } : b))
@@ -555,12 +572,12 @@ export default function OwnerDashboardPage() {
       alert("Failed to mark booking as completed.");
       setBookings(oldBookings)
     }
-  }
+  }, [bookings, pendingConfirmation]);
 
-  const handleSignOut = () => {
+  const handleSignOut = useCallback(() => {
     localStorage.removeItem("owner_id")
     router.push("/owner/login")
-  }
+  }, [router]);
 
   // --- RENDER LOGIC ---
 
@@ -755,11 +772,21 @@ export default function OwnerDashboardPage() {
                             <Select value={newBooking.slotId} onValueChange={(value) => setNewBooking({ ...newBooking, slotId: value })}>
                               <SelectTrigger><SelectValue placeholder="Select time slot" /></SelectTrigger>
                               <SelectContent>
-                                {timeSlots.map((slot) => (
-                                  <SelectItem key={slot.id} value={slot.id} disabled={isSlotTaken(slot.id)}>
-                                    {slot.time} {isSlotTaken(slot.id) && "(Unavailable)"}
-                                  </SelectItem>
-                                ))}
+                                {timeSlots.map((slot) => {
+                                  // --- UPDATED: Disable past slots ---
+                                  const isPastSlot = isSlotInPast(slot.endTime);
+                                  return (
+                                    <SelectItem 
+                                      key={slot.id} 
+                                      value={slot.id} 
+                                      disabled={isSlotTaken(slot.id) || isPastSlot}
+                                    >
+                                      {slot.time} 
+                                      {isSlotTaken(slot.id) && " (Booked)"}
+                                      {isPastSlot && " (Past)"}
+                                    </SelectItem>
+                                  )
+                                })}
                               </SelectContent>
                             </Select>
                           </div>
@@ -782,97 +809,104 @@ export default function OwnerDashboardPage() {
                   <div className="text-center py-12 text-muted-foreground">No bookings for this date.</div>
                 ) : (
                   <div className="space-y-4">
-                    {groupedBookings.map((group) => (
-                      <Card 
-                        key={group.id} 
-                        className={cn(
-                          "bg-secondary border-border",
-                          group.status === 'cancelled' && "opacity-50 bg-secondary/50"
-                        )}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="flex items-start gap-4">
-                              <div className="bg-primary/10 p-3 rounded-full hidden sm:flex">
-                                {group.status === 'cancelled' ? <XCircle className="h-5 w-5 text-red-500" /> 
-                                : <Clock className="h-5 w-5 text-primary" />}
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h4 className={cn("font-medium", group.status === 'cancelled' && "line-through")}>
-                                    {group.startTime} - {group.endTime}
-                                  </h4>
-                                  <Badge variant={group.source === "app" ? "default" : "outline"} className={cn("text-xs", group.source === "app" ? "bg-primary text-white" : "bg-secondary text-primary border-primary")}>
-                                    {group.source === "app" ? "App" : "Manual"}
-                                  </Badge>
+                    {groupedBookings.map((group) => {
+                      // --- UPDATED: Check if booking is in the past ---
+                      const isPastBooking = isSlotInPast(group.endTime);
+                      
+                      return (
+                        <Card 
+                          key={group.id} 
+                          className={cn(
+                            "bg-secondary border-border",
+                            (group.status === 'cancelled' || isPastBooking) && "opacity-60" // Fade past bookings
+                          )}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div className="flex items-start gap-4">
+                                <div className="bg-primary/10 p-3 rounded-full hidden sm:flex">
+                                  {group.status === 'cancelled' ? <XCircle className="h-5 w-5 text-red-500" /> 
+                                  : <Clock className="h-5 w-5 text-primary" />}
                                 </div>
-                                <p className="text-sm text-muted-foreground">{group.customerName} • {group.customerPhone}</p>
-                                <p className="text-sm text-muted-foreground">{group.sport} • ₹{group.price}</p>
-                                
-                                <div className="flex flex-wrap items-center gap-2 mt-2">
-                                  <Badge variant={'secondary'} className={cn("capitalize",
-                                      group.status === 'confirmed' ? 'bg-green-600 text-white' :
-                                      group.status === 'pending' ? 'bg-yellow-500 text-black' :
-                                      group.status === 'completed' ? 'bg-blue-600 text-white' :
-                                      group.status === 'cancelled' ? 'bg-red-600 text-white' : '')}>
-                                    {group.status}
-                                  </Badge>
-                                  <Badge variant={'secondary'} className={cn("capitalize",
-                                    group.payment_status === 'paid' ? 'bg-green-600 text-white' : 
-                                    group.payment_status === 'refund processed' ? 'bg-blue-500 text-white' :
-                                    group.payment_status === 'refund_initiated' ? 'bg-orange-500 text-white' :
-                                    group.payment_status === 'pending' ? 'bg-red-500 text-white' : '')}>
-                                    Payment: {group.payment_status.replace('_', ' ')}
-                                  </Badge>
-                                  {group.refund_amount != null && (
-                                    <Badge variant="outline" className="text-xs border-orange-500 text-orange-500">
-                                      Refund: ₹{group.refund_amount}
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className={cn("font-medium", group.status === 'cancelled' && "line-through")}>
+                                      {group.startTime} - {group.endTime}
+                                    </h4>
+                                    <Badge variant={group.source === "app" ? "default" : "outline"} className={cn("text-xs", group.source === "app" ? "bg-primary text-white" : "bg-secondary text-primary border-primary")}>
+                                      {group.source === "app" ? "App" : "Manual"}
                                     </Badge>
-                                  )}
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">{group.customerName} • {group.customerPhone}</p>
+                                  <p className="text-sm text-muted-foreground">{group.sport} • ₹{group.price}</p>
+                                  
+                                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                                    <Badge variant={'secondary'} className={cn("capitalize",
+                                        group.status === 'confirmed' ? 'bg-green-600 text-white' :
+                                        group.status === 'pending' ? 'bg-yellow-500 text-black' :
+                                        group.status === 'completed' ? 'bg-blue-600 text-white' :
+                                        group.status === 'cancelled' ? 'bg-red-600 text-white' : '')}>
+                                      {group.status}
+                                    </Badge>
+                                    <Badge variant={'secondary'} className={cn("capitalize",
+                                      group.payment_status === 'paid' ? 'bg-green-600 text-white' : 
+                                      group.payment_status === 'refund processed' ? 'bg-blue-500 text-white' :
+                                      group.payment_status === 'refund_initiated' ? 'bg-orange-500 text-white' :
+                                      group.payment_status === 'pending' ? 'bg-red-500 text-white' : '')}>
+                                      Payment: {group.payment_status.replace('_', ' ')}
+                                    </Badge>
+                                    {group.refund_amount != null && (
+                                      <Badge variant="outline" className="text-xs border-orange-500 text-orange-500">
+                                        Refund: ₹{group.refund_amount}
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-2 ml-auto">
-                              {(group.status === 'pending' || group.status === 'confirmed') && (
-                                <Button
-                                  variant="ghost" size="icon"
-                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  onClick={() => handleCancelBooking(group.id)}
-                                  title="Cancel Booking"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
                               
-                              {group.status === 'completed' && (
-                                <Button variant="ghost" size="icon" className="text-green-600" disabled title="Completed">
-                                  <CheckCircle className="h-4 w-4" />
-                                </Button>
-                              )}
+                              <div className="flex items-center gap-2 ml-auto">
+                                {(group.status === 'pending' || group.status === 'confirmed') && (
+                                  <Button
+                                    variant="ghost" size="icon"
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => handleCancelBooking(group.id)}
+                                    title="Cancel Booking"
+                                    // --- UPDATED: Disable if booking is in the past ---
+                                    disabled={isPastBooking}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                
+                                {group.status === 'completed' && (
+                                  <Button variant="ghost" size="icon" className="text-green-600" disabled title="Completed">
+                                    <CheckCircle className="h-4 w-4" />
+                                  </Button>
+                                )}
 
-                              {group.status === 'cancelled' && group.payment_status === 'refund processed' && (
-                                <Button variant="ghost" size="icon" className="text-red-500" disabled title="Cancelled & Refund Processed">
-                                  <XCircle className="h-4 w-4" />
-                                </Button>
-                              )}
+                                {group.status === 'cancelled' && group.payment_status === 'refund processed' && (
+                                  <Button variant="ghost" size="icon" className="text-red-500" disabled title="Cancelled & Refund Processed">
+                                    <XCircle className="h-4 w-4" />
+                                  </Button>
+                                )}
 
-                              {group.status === 'cancelled' && group.payment_status === 'refund_initiated' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="gap-2 border-primary text-primary hover:bg-primary/10 hover:text-primary"
-                                  onClick={() => handleProcessRefund(group.id)}
-                                >
-                                  <RefreshCw className="h-4 w-4" />
-                                  Process Refund (₹{group.refund_amount})
-                                </Button>
-                              )}
+                                {group.status === 'cancelled' && group.payment_status === 'refund_initiated' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="gap-2 border-primary text-primary hover:bg-primary/10 hover:text-primary"
+                                    onClick={() => handleProcessRefund(group.id)}
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                    Process Refund (₹{group.refund_amount})
+                                  </Button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                   </div>
                 )}
               </TabsContent>
@@ -903,11 +937,20 @@ export default function OwnerDashboardPage() {
                               <SelectValue placeholder="Select time slot" />
                             </SelectTrigger>
                             <SelectContent>
-                              {timeSlots.map((slot) => (
-                                <SelectItem key={slot.id} value={slot.id} disabled={isSlotTaken(slot.id)}>
-                                  {slot.time} {isSlotTaken(slot.id) && "(Unavailable)"}
-                                </SelectItem>
-                              ))}
+                              {timeSlots.map((slot) => {
+                                const isPastSlot = isSlotInPast(slot.endTime);
+                                return (
+                                  <SelectItem 
+                                    key={slot.id} 
+                                    value={slot.id} 
+                                    disabled={isSlotTaken(slot.id) || isPastSlot}
+                                  >
+                                    {slot.time} 
+                                    {isSlotTaken(slot.id) && " (Booked)"}
+                                    {isPastSlot && " (Past)"}
+                                  </SelectItem>
+                                )
+                              })}
                             </SelectContent>
                           </Select>
                         </div>
@@ -952,6 +995,11 @@ export default function OwnerDashboardPage() {
                       const block = manualBlocks.find((b) => b.slotId === slot.id)
                       const isAvailable = !booking && !block
                       
+                      const isPastSlot = isSlotInPast(slot.endTime);
+                      
+                      // This is true ONLY for available, past slots
+                      const isClickable = isAvailable && !isPastSlot;
+
                       let statusText = "Available"
                       if (block) {
                         statusText = `Blocked: ${block.reason || 'Offline'}`
@@ -965,19 +1013,35 @@ export default function OwnerDashboardPage() {
                         }
                       }
                       
-                      const isClickable = !isSlotTaken(slot.id) && !block
-
                       return (
                         <Card 
                           key={slot.id}
                           onClick={() => isClickable ? handleOpenBlockModal(slot.id) : undefined}
-                          className={cn("border", 
-                            isClickable ? "bg-secondary/50 cursor-pointer hover:border-primary" 
-                            : block ? "bg-destructive/10 border-destructive/30"
-                            : booking?.status === 'completed' ? "bg-green-700/10 border-green-700/30"
-                            : booking?.status === 'cancelled' ? "bg-red-500/10 border-red-500/30"
-                            : "bg-primary/10 border-primary/30"
-                          )}>
+                          className={cn("border",
+                            // --- NEW LOGIC ---
+                            // 1. Is it blocked?
+                            block ? "bg-destructive/10 border-destructive/30" :
+                            
+                            // 2. Is it completed?
+                            booking?.status === 'completed' ? "bg-green-700/10 border-green-700/30" :
+                            
+                            // 3. Is it cancelled?
+                            booking?.status === 'cancelled' ? "bg-red-500/10 border-red-500/30" :
+                            
+                            // 4. Is it actively booked?
+                            booking ? "bg-primary/10 border-primary/30" :
+                            
+                            // 5. Is it available AND in the past? (Greyed out)
+                            (isAvailable && isPastSlot) ? "bg-secondary/20 border-border opacity-60 cursor-not-allowed" :
+                            
+                            // 6. Is it available AND in the future? (Clickable)
+                            isAvailable ? "bg-secondary/50 cursor-pointer hover:border-primary" :
+                            
+                            // Fallback
+                            "bg-secondary/50"
+                            // --- END NEW LOGIC ---
+                          )}
+                        >
                           <CardContent className="p-3 sm:p-4">
                             <div className="flex justify-between items-center">
                               <div>
@@ -987,10 +1051,16 @@ export default function OwnerDashboardPage() {
                                 </p>
                               </div>
                               {block && (
-                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10 -mr-2" onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteBlock(block.id);
-                                }}>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10 -mr-2"
+                                  disabled={isPastSlot} // Disable if in the past
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteBlock(block.id);
+                                  }}
+                                >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               )}
