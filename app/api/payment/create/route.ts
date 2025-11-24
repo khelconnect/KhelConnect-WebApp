@@ -6,34 +6,32 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { bookingId, amount, customerName, customerEmail } = body;
 
+    // Retrieve environment variables
     const apiKey = process.env.DODO_PAYMENTS_API_KEY;
     const productId = process.env.DODO_PRODUCT_ID;
+    const manualEnv = process.env.DODO_PAYMENTS_ENVIRONMENT; 
 
-    // --- FIX: Define Base URL with Fallback ---
-    // This ensures return_url is always valid, even if env var is missing
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL 
       ? process.env.NEXT_PUBLIC_BASE_URL 
       : 'https://www.khelconnect.in/';
 
+    // --- CRITICAL CHECK ---
     if (!apiKey || !productId) {
-      console.error("Server Error: Missing API Key or Product ID");
-      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+      console.error("❌ CRITICAL: API Key or Product ID is missing in Production variables.");
+      return NextResponse.json({ error: "Server configuration error: Missing Keys" }, { status: 500 });
     }
 
-    // 1. Smart Environment Detection
-    const isLiveKey = apiKey.trim().startsWith("live_");
+    // 1. Determine Environment
     const environment = 'live_mode';
 
     console.log(`--- DODO PAYMENT INIT ---`);
-    console.log(`Environment: ${environment}`);
-    console.log(`Booking ID: ${bookingId}`);
-    console.log(`Return URL: ${baseUrl}/payment/success?booking_id=${bookingId}`);
-    console.log(`-------------------------`);
+    console.log(`Env: ${environment}`);
+    console.log(`Base URL: ${baseUrl}`);
 
     // 2. Initialize SDK
     const client = new DodoPayments({
       bearerToken: apiKey.trim(),
-      environment: environment,
+      environment: environment, 
     });
 
     // 3. Create Session
@@ -42,7 +40,7 @@ export async function POST(req: Request) {
         {
           product_id: productId,
           quantity: 1,
-          amount: amount * 100 // Amount in paise/cents
+          amount: amount * 100 
         }
       ],
       billing_address: {
@@ -59,7 +57,6 @@ export async function POST(req: Request) {
       metadata: {
         booking_id: bookingId,
       },
-      // Use the safe baseUrl variable here
       return_url: `${baseUrl}/payment/success?booking_id=${bookingId}`,
     });
 
@@ -70,9 +67,10 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("❌ Dodo Payment Error:", error);
     
-    // SAFE ERROR RESPONSE: Do not send the full 'error' object
+    // FIX: Only send the message string, NEVER the full error object
+    // The full object often causes JSON serialization crashes
     return NextResponse.json({ 
-      error: error.message || "Payment creation failed" 
+      error: error.message || "Payment creation failed"
     }, { status: 500 });
   }
 }
