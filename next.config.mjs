@@ -10,8 +10,10 @@ const nextConfig = {
     unoptimized: true,
   },
 
-  // 1. Tell Next.js to export a static site
-  output: 'export',
+  // --- CONDITIONAL EXPORT ---
+  // Only use 'export' if the BUILD_TARGET environment variable is set to 'mobile'
+  // Otherwise, default to standard server mode (needed for API routes)
+  output: process.env.BUILD_TARGET === 'mobile' ? 'export' : undefined,
 }
 
 export default nextConfig

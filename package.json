@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "sync": "cap sync",
+    "build:mobile": "cross-env BUILD_TARGET=mobile next build" 
   },
   "dependencies": {
     "@capacitor/android": "^7.4.4",
