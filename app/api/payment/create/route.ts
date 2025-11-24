@@ -8,29 +8,33 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.DODO_PAYMENTS_API_KEY;
     const productId = process.env.DODO_PRODUCT_ID;
-    
-    // 1. Define Base URL with Fallback
-    // If the env var is missing, default to localhost
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
-    // --- DEBUG LOGS ---
-    console.log("--- DODO DEBUG ---");
-    console.log("API Key Present:", !!apiKey);
-    console.log("Base URL:", baseUrl); // Check this in your terminal
-    console.log("Return URL:", `${baseUrl}/payment/success?booking_id=${bookingId}`);
-    // ---------------------
+    // --- FIX: Define Base URL with Fallback ---
+    // This ensures return_url is always valid, even if env var is missing
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL 
+      ? process.env.NEXT_PUBLIC_BASE_URL 
+      : 'https://www.khelconnect.in/';
 
     if (!apiKey || !productId) {
-      return NextResponse.json({ error: "Missing API Key or Product ID" }, { status: 500 });
+      console.error("Server Error: Missing API Key or Product ID");
+      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
     }
 
-    // 2. Initialize SDK with EXPLICIT Environment
+    // 1. Smart Environment Detection
+    const isLiveKey = apiKey.trim().startsWith("live_");
+    const environment = 'live_mode';
+
+    console.log(`--- DODO PAYMENT INIT ---`);
+    console.log(`Environment: ${environment}`);
+    console.log(`Booking ID: ${bookingId}`);
+    console.log(`Return URL: ${baseUrl}/payment/success?booking_id=${bookingId}`);
+    console.log(`-------------------------`);
+
+    // 2. Initialize SDK
     const client = new DodoPayments({
       bearerToken: apiKey.trim(),
-      environment: 'live_mode', 
+      environment: environment,
     });
-
-    console.log(`Creating Dodo Session...`);
 
     // 3. Create Session
     const session = await client.checkoutSessions.create({
@@ -65,9 +69,10 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error("❌ Dodo Payment Error:", error);
+    
+    // SAFE ERROR RESPONSE: Do not send the full 'error' object
     return NextResponse.json({ 
-      error: error.message || "Payment creation failed",
-      details: error 
+      error: error.message || "Payment creation failed" 
     }, { status: 500 });
   }
 }
