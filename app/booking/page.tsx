@@ -220,7 +220,7 @@ export default function BookingPage() {
   };
 
   // --- MODIFIED: Handle both new bookings and reschedules ---
-  const handleConfirmBooking = async (customUserId?: string) => {
+const handleConfirmBooking = async (customUserId?: string) => {
     if (!selectedDate || selectedSlots.length === 0 || !turfInfo || !formattedDate) return;
 
     const finalUserId = customUserId || userId;
@@ -231,41 +231,30 @@ export default function BookingPage() {
     
     const totalAmount = selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo.price), 0);
 
-    // --- NEW: Reschedule vs New Booking Logic ---
-    if (isRescheduleMode) {
-      // --- RESCHEDULE LOGIC ---
-      setIsSubmitting(true);
-      try {
+    setIsSubmitting(true); // Start loading
+
+    try {
+      let currentBookingId = rescheduleId;
+
+      // 1. CREATE or UPDATE Booking in Database
+      if (isRescheduleMode) {
+        // ... (Existing Reschedule Logic - usually no payment if price is same)
+        // If you want to charge for rescheduling, add payment logic here too
         const { error } = await supabase
           .from("bookings")
           .update({
             date: formattedDate,
             slot: selectedSlots,
             amount: totalAmount,
-            status: "pending", // Reset status
-            payment_status: "pending", // Reset payment
-            // user_id and turf_id remain the same
+            status: "pending",
+            payment_status: "pending", // Reset to pending if price changed
           })
           .eq("id", rescheduleId);
-
         if (error) throw error;
 
-        // Show success modal
-        setShowPersonalDetailsModal(false);
-        setShowRescheduleSuccessModal(true);
-        fetchSlots(); // Refresh slots in background
-
-      } catch (error: any) {
-        console.error("Reschedule failed:", error.message);
-        alert("Reschedule failed: " + error.message);
-      } finally {
-        setIsSubmitting(false);
-      }
-      
-    } else {
-      // --- EXISTING NEW BOOKING LOGIC ---
-      try {
-        const { data, error } = await supabase
+      } else {
+        // New Booking
+        const { data: bookingData, error } = await supabase
           .from("bookings")
           .insert({
             turf_id: turfId,
@@ -277,35 +266,37 @@ export default function BookingPage() {
             status: "pending",
             amount: totalAmount,
           })
-          .select()
+          .select("id")
           .single();
 
         if (error) throw error;
-
-        const bookingId = Math.random().toString(36).substring(2, 10).toUpperCase();
-        setSelectedSlots([]);
-        setUserId(null);
-        fetchSlots();
-
-        router.push(
-          `/whatsapp-confirmation?` +
-            new URLSearchParams({
-              sport,
-              turfId,
-              turfName: turfInfo?.name || "",
-              date: formattedDate,
-              slots: selectedSlots.join(","), // You may want to convert these IDs to times
-              price: String(totalAmount),
-              bookingId,
-              customerName: personalDetails.name,
-              customerEmail: personalDetails.email,
-              customerPhone: personalDetails.phone,
-            }).toString()
-        );
-      } catch (error: any) {
-        console.error("Booking failed:", error?.message);
-        alert("Booking failed: " + error.message);
+        currentBookingId = bookingData.id;
       }
+
+      // 2. INITIATE PAYMENT (Call our new API)
+      const response = await fetch("/api/payment/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId: currentBookingId,
+          amount: totalAmount,
+          customerName: personalDetails.name,
+          customerEmail: personalDetails.email,
+        }),
+      });
+
+      const { paymentUrl, error: apiError } = await response.json();
+
+      if (apiError) throw new Error(apiError);
+
+      // 3. REDIRECT TO DODO PAYMENTS
+      // The user leaves your site to pay. Dodo will redirect them back later.
+      window.location.href = paymentUrl;
+
+    } catch (error: any) {
+      console.error("Booking/Payment failed:", error.message);
+      alert("Failed to initiate payment: " + error.message);
+      setIsSubmitting(false);
     }
   };
 
