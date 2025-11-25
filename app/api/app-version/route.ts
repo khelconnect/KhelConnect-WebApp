@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 
-// --- FIX: Conditional Export ---
-// If building for mobile, force static (to satisfy 'output: export').
-// If building for web, force dynamic (to prevent caching).
-export const dynamic = process.env.BUILD_TARGET === 'mobile' ? 'force-static' : 'force-dynamic';
-// -------------------------------
+
 
 export async function GET() {
   // --- CONFIGURATION: UPDATE THIS MANUALLY FOR EVERY RELEASE ---
