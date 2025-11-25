@@ -94,7 +94,7 @@ export default function Home() {
           <p className="text-mint-light text-sm font-medium mb-2">{sport.subtitle}</p>
           <h3 className="text-2xl font-bold text-white mb-1">{sport.name}</h3>
           <div className="flex items-center text-white/80 text-sm">
-            Book Now <ArrowRight className="ml-2 h-4 w-4" />
+            Bo Now <ArrowRight className="ml-2 h-4 w-4" />
           </div>
         </div>
       </Card>
