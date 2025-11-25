@@ -8,7 +8,7 @@ export async function GET() {
   // --- CONFIGURATION: UPDATE THIS MANUALLY FOR EVERY RELEASE ---
   
   // 1. The latest version code (Must match android/app/build.gradle > versionName)
-  const LATEST_VERSION = "1.0.2"; 
+  const LATEST_VERSION = "1.0.3"; 
   
   // 2. The direct link to download the APK
   // You will upload the new APK to your 'public' folder or a cloud link (Drive/S3)
