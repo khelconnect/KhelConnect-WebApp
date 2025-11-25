@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-
+// --- FIX: Explicitly mark as static to satisfy 'output: export' ---
+export const dynamic = 'force-static';
+// ----------------------------------------------------------------
 
 export async function GET() {
   // --- CONFIGURATION: UPDATE THIS MANUALLY FOR EVERY RELEASE ---
