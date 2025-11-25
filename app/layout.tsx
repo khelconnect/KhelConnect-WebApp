@@ -12,6 +12,7 @@ import { ThemeScript } from "./theme-script"
 import localFont from "next/font/local"
 import { MainNavbar } from "@/components/main-navbar"
 import { Facebook, Twitter, Instagram } from "lucide-react"
+import { AppUpdater } from "@/components/AppUpdater" // 1. Import the updater
 
 const qualyNeue = localFont({
   src: [
@@ -48,6 +49,9 @@ export default function RootLayout({
       <body className={`${inter.className} bg-background`}>
         <ThemeScript />
         <ThemeProvider defaultTheme="dark">
+          {/* 2. Add AppUpdater here so it runs globally */}
+          <AppUpdater />
+          
           <MainNavbar />
           <div className="flex min-h-screen flex-col">
             <div className="flex-1">{children}</div>
