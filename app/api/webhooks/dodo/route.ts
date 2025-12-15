@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 // Ensure this route is treated as dynamic (important for webhooks)
-export const dynamic = 'force-dynamic';
+//export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {

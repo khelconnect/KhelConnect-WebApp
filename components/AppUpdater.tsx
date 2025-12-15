@@ -24,33 +24,34 @@ export function AppUpdater() {
 
   useEffect(() => {
     const checkVersion = async () => {
-      // 1. Only run this check on actual phones (Android/iOS), not the website
+      // 1. Only run on native mobile apps (Android/iOS)
+      // This prevents the popup from showing on your website
       if (!Capacitor.isNativePlatform()) return;
 
       try {
-        // 2. Get the app's current installed version
+        // 2. Get current installed version from the phone
         const appInfo = await App.getInfo();
         const currentVersion = appInfo.version; // e.g., "1.0.0"
 
         // 3. Call your LIVE website API to get the latest version
-        // IMPORTANT: Ensure NEXT_PUBLIC_BASE_URL is set to "https://khelconnect.in" in your mobile build
-        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://khelconnect.in";
+        // We use the full URL because the app file system is local
+        const LIVE_DOMAIN = "https://khelconnect.in"; 
         
-        console.log(`Checking for updates. Current: ${currentVersion}. Checking API: ${baseUrl}/api/app-version`);
-
-        const res = await fetch(`${baseUrl}/api/app-version`, {
-          cache: 'no-store' // Never cache this request
+        console.log(`Checking updates. App: ${currentVersion}`);
+        
+        const res = await fetch(`${LIVE_DOMAIN}/api/app-version`, {
+            cache: 'no-store',
+            headers: { 'Cache-Control': 'no-cache' }
         });
-        
+
         if (!res.ok) throw new Error("Update check failed");
 
         const latestData = await res.json();
 
-        // 4. Simple String Comparison
-        // Note: For complex versioning (1.0.9 -> 1.0.10), use a library like 'semver-compare'
-        // But for simple "1.0.0" != "1.0.1", exact inequality works fine.
+        // 4. Compare versions
+        // If they don't match, show the update popup
         if (latestData.version !== currentVersion) {
-          console.log(`Update found! New version: ${latestData.version}`);
+          console.log(`Update available: ${latestData.version}`);
           setUpdateData(latestData);
           setShowModal(true);
         }
@@ -64,16 +65,14 @@ export function AppUpdater() {
 
   const handleDownload = () => {
     if (updateData?.downloadUrl) {
-      // Use _system to open the actual Chrome browser to handle the download
+      // Open in system browser (Chrome) to handle the download
       window.open(updateData.downloadUrl, "_system");
     }
   };
 
   const handleClose = () => {
     // If forceUpdate is true, do NOT allow closing the modal
-    if (updateData?.forceUpdate) {
-      return; 
-    }
+    if (updateData?.forceUpdate) return; 
     setShowModal(false);
   };
 
@@ -84,22 +83,20 @@ export function AppUpdater() {
       open={showModal} 
       onOpenChange={(isOpen) => {
         // Prevent closing via clicking outside if forced
-        if (!isOpen && !updateData.forceUpdate) {
-          setShowModal(false);
-        }
+        if (!isOpen && !updateData.forceUpdate) setShowModal(false);
       }}
     >
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-primary">
             <AlertCircle className="h-5 w-5" />
-            New Update Available
+            Update Available
           </DialogTitle>
           <DialogDescription className="pt-2 space-y-2">
             <p>A new version <strong>({updateData.version})</strong> of KhelConnect is ready.</p>
             {updateData.forceUpdate && (
               <p className="text-amber-600 font-medium text-xs">
-                * This is a critical update. You must install it to continue.
+                * This update is required to continue using the app.
               </p>
             )}
           </DialogDescription>
@@ -119,4 +116,3 @@ export function AppUpdater() {
     </Dialog>
   );
 }
-
