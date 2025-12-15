@@ -13,7 +13,6 @@ export async function POST(req: Request) {
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL 
       ? process.env.NEXT_PUBLIC_BASE_URL 
-      : 'https://www.khelconnect.in/';
 
     // --- CRITICAL CHECK ---
     if (!apiKey || !productId) {
@@ -22,7 +21,7 @@ export async function POST(req: Request) {
     }
 
     // 1. Determine Environment
-    const environment = 'live_mode';
+    const environment = 'test_mode';
 
     console.log(`--- DODO PAYMENT INIT ---`);
     console.log(`Env: ${environment}`);
