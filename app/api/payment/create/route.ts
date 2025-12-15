@@ -13,6 +13,7 @@ export async function POST(req: Request) {
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL 
       ? process.env.NEXT_PUBLIC_BASE_URL 
+      : 'https://www.khelconnect.in/';
 
     // --- CRITICAL CHECK ---
     if (!apiKey || !productId) {
