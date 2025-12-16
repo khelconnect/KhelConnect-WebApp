@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { App } from "@capacitor/app";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, CapacitorHttp } from "@capacitor/core"; // Import CapacitorHttp
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Download, AlertCircle } from "lucide-react";
@@ -13,43 +13,41 @@ export function AppUpdater() {
 
   useEffect(() => {
     const checkVersion = async () => {
-      // DEBUG: Confirm the code is running
-      // alert("Updater Started"); 
-
+      // Check if running on native platform
       if (!Capacitor.isNativePlatform()) return;
 
       try {
         const appInfo = await App.getInfo();
-        const currentVersion = appInfo.version;
+        const currentVersion = appInfo.version; // e.g., "1.0.0"
 
-        // Ensure this URL is correct!
+        // Hardcoded live URL
         const LIVE_URL = "https://khelconnect.in/api/app-version";
         
-        // DEBUG: Alert before fetch
-        // alert(`Fetching: ${LIVE_URL}`);
-
-        const res = await fetch(LIVE_URL, {
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache' }
+        // --- BYPASS CORS: Use Native HTTP ---
+        // This runs at the OS level, ignoring browser security rules
+        const response = await CapacitorHttp.get({
+          url: LIVE_URL,
         });
         
-        if (!res.ok) {
-            alert(`Update Check Failed: Server Status ${res.status}`);
+        if (response.status !== 200) {
+            // alert(`Update Check Failed: Server Status ${response.status}`);
+            console.error("Update check failed status:", response.status);
             return;
         }
 
-        const latestData = await res.json();
+        // CapacitorHttp automatically parses JSON into .data
+        const latestData = response.data;
 
-        // DEBUG: Compare versions visually
-        // alert(`Phone: ${currentVersion} vs Server: ${latestData.version}`);
+        // Debug Alert (Optional: You can remove this if it works)
+        // alert(`Phone: ${currentVersion} | Server: ${latestData.version}`);
 
         if (latestData.version !== currentVersion) {
           setUpdateData(latestData);
           setShowModal(true);
         }
       } catch (error: any) {
-        // This will catch Network errors (like CORS)
-        alert(`Update Error: ${error.message}`);
+        console.error("Update check failed:", error);
+        // alert(`Update Error: ${error.message}`);
       }
     };
 
@@ -84,6 +82,11 @@ export function AppUpdater() {
           </DialogTitle>
           <DialogDescription className="pt-2 space-y-2">
             <p>A new version <strong>({updateData.version})</strong> is ready.</p>
+            {updateData.forceUpdate && (
+              <p className="text-amber-600 font-medium text-xs">
+                * This update is required to continue using the app.
+              </p>
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col sm:flex-col gap-2">
@@ -91,6 +94,11 @@ export function AppUpdater() {
             <Download className="h-4 w-4" />
             Download
           </Button>
+          {!updateData.forceUpdate && (
+            <Button variant="ghost" onClick={handleClose} className="w-full">
+              Skip for now
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
