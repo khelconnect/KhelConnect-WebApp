@@ -4,8 +4,8 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils"
-import { supabase } from "@/lib/supabaseClient";
 import { format, startOfDay, isBefore, isSameDay } from "date-fns";
+import { supabase } from "@/lib/supabaseClient";
 import {
   CalendarIcon,
   Clock,
@@ -14,21 +14,19 @@ import {
   MapPin,
   XCircle,
   User,
-  Mail,
-  Phone,
   Star,
-  Loader2, // Added Loader
-  CheckCircle, // Added Check
+  Loader2,
+  CheckCircle,
 } from "lucide-react";
 import Link from "next/link";
 
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // Added CardDescription
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"; // Added DialogFooter
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 interface Slot {
   id: string;
@@ -45,6 +43,7 @@ interface Turf {
   location: string;
   rating: number;
   price: number;
+  booking_window_days: number;
 }
 
 export default function BookingPage() {
@@ -53,12 +52,11 @@ export default function BookingPage() {
   const turfId = searchParams.get("turf") || "";
   const sport = searchParams.get("sport") || "football";
 
-  // --- NEW: Reschedule Logic ---
+  // --- Reschedule Logic ---
   const rescheduleId = searchParams.get("reschedule_id");
   const slotCountParam = searchParams.get("slot_count");
   const requiredSlotCount = slotCountParam ? parseInt(slotCountParam, 10) : 0;
   const isRescheduleMode = !!rescheduleId && requiredSlotCount > 0;
-  // --- END NEW ---
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -79,19 +77,17 @@ export default function BookingPage() {
   const [conflictFields, setConflictFields] = useState<{ name?: boolean; email?: boolean }>({});
   const [slotPrices, setSlotPrices] = useState<{ [slotId: string]: number }>({});
   
-  // --- NEW: Reschedule Success Modal ---
+  // --- Reschedule Success Modal ---
   const [showRescheduleSuccessModal, setShowRescheduleSuccessModal] = useState(false);
 
   const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
 
-  // --- MODIFIED: Pre-fill user data if rescheduling ---
   useEffect(() => {
     const initializePage = async () => {
       if (turfId) {
         fetchTurfInfo();
       }
       if (isRescheduleMode) {
-        // Fetch the user data associated with the original booking
         setLoading(true);
         const { data: bookingData, error } = await supabase
           .from("bookings")
@@ -115,7 +111,7 @@ export default function BookingPage() {
   const fetchTurfInfo = async () => {
     const { data, error } = await supabase
       .from("turfs")
-      .select("id, name, image, location, rating, price")
+      .select("id, name, image, location, rating, price, booking_window_days")
       .eq("id", turfId)
       .single();
 
@@ -153,7 +149,6 @@ export default function BookingPage() {
 
       setSlots(slotsWithStatus);
 
-      // Price fetching logic
       const dayOfWeek = selectedDate.getDay();
       const { data: pricingRules, error: priceError } = await supabase
         .from("turf_prices")
@@ -195,65 +190,111 @@ export default function BookingPage() {
     }
   };
 
-
   useEffect(() => {
     if (turfInfo && formattedDate) {
-      setSelectedSlots([]); // Clear slots on date change
+      setSelectedSlots([]); 
       fetchSlots();
     }
-  }, [turfInfo, formattedDate, turfId, sport]); // Re-run if turfInfo is loaded
+  }, [turfInfo, formattedDate, turfId, sport]); 
 
-  // --- MODIFIED: Enforce slot count ---
-  const handleSlotToggle = async (id: string) => {
+  // --- UPDATED: Handle Consecutive Selection ---
+  const handleSlotToggle = (id: string) => {
+    const clickedSlotIndex = slots.findIndex((s) => s.id === id);
+    if (clickedSlotIndex === -1) return;
+
     const isSelected = selectedSlots.includes(id);
+
     if (isSelected) {
-      setSelectedSlots((prev) => prev.filter((s) => s !== id));
+      // DESELECTION LOGIC
+      // Sort indices numerically to find true ends
+      const currentIndices = selectedSlots
+        .map((sId) => slots.findIndex((s) => s.id === sId))
+        .sort((a, b) => a - b);
+
+      const minIdx = currentIndices[0];
+      const maxIdx = currentIndices[currentIndices.length - 1];
+
+      if (clickedSlotIndex === minIdx || clickedSlotIndex === maxIdx) {
+        setSelectedSlots((prev) => prev.filter((s) => s !== id));
+      } else {
+        window.alert("Please deselect slots from the beginning or end of your selection to keep the time block continuous.");
+      }
     } else {
-      // --- NEW LOGIC ---
-      if (isRescheduleMode && selectedSlots.length >= requiredSlotCount) {
-        alert(`You can only select ${requiredSlotCount} slot(s) for this reschedule.`);
+      // SELECTION LOGIC
+      if (selectedSlots.length === 0) {
+        setSelectedSlots([id]);
         return;
       }
-      // --- END NEW LOGIC ---
-      setSelectedSlots((prev) => [...prev, id]);
+
+      const currentIndices = selectedSlots
+        .map((sId) => slots.findIndex((s) => s.id === sId))
+        .sort((a, b) => a - b);
+
+      const minIdx = currentIndices[0];
+      const maxIdx = currentIndices[currentIndices.length - 1];
+
+      const isAdjacent = clickedSlotIndex === minIdx - 1 || clickedSlotIndex === maxIdx + 1;
+
+      if (isAdjacent) {
+        if (isRescheduleMode && selectedSlots.length >= requiredSlotCount) {
+          window.alert(`You can only select exactly ${requiredSlotCount} slot(s) for this reschedule.`);
+          return;
+        }
+        setSelectedSlots((prev) => [...prev, id]);
+      } else {
+        if (window.confirm("You have selected a non-consecutive slot. This will clear your previous selection and start a new one. Do you want to proceed?")) {
+          setSelectedSlots([id]);
+        }
+      }
     }
   };
 
-  // --- MODIFIED: Handle both new bookings and reschedules ---
-const handleConfirmBooking = async (customUserId?: string) => {
+  const handleConfirmBooking = async (customUserId?: string) => {
     if (!selectedDate || selectedSlots.length === 0 || !turfInfo || !formattedDate) return;
 
     const finalUserId = customUserId || userId;
     if (!finalUserId) {
-      alert("User session error. Please try again.");
+      window.alert("User session error. Please try again.");
       return;
     }
     
     const totalAmount = selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo.price), 0);
 
-    setIsSubmitting(true); // Start loading
+    // Use absolute URL for Mobile Apps
+    const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://khelconnect.in";
 
-    try {
-      let currentBookingId = rescheduleId;
+    setIsSubmitting(true);
 
-      // 1. CREATE or UPDATE Booking in Database
-      if (isRescheduleMode) {
-        // ... (Existing Reschedule Logic - usually no payment if price is same)
-        // If you want to charge for rescheduling, add payment logic here too
+    if (isRescheduleMode) {
+      // Reschedule Flow
+      try {
         const { error } = await supabase
           .from("bookings")
           .update({
             date: formattedDate,
             slot: selectedSlots,
             amount: totalAmount,
-            status: "pending",
-            payment_status: "pending", // Reset to pending if price changed
+            status: "pending", 
+            payment_status: "pending",
           })
           .eq("id", rescheduleId);
+
         if (error) throw error;
 
-      } else {
-        // New Booking
+        setShowPersonalDetailsModal(false);
+        setShowRescheduleSuccessModal(true);
+        fetchSlots(); 
+
+      } catch (error: any) {
+        console.error("Reschedule failed:", error.message);
+        window.alert("Reschedule failed: " + error.message);
+      } finally {
+        setIsSubmitting(false);
+      }
+      
+    } else {
+      // New Booking Flow
+      try {
         const { data: bookingData, error } = await supabase
           .from("bookings")
           .insert({
@@ -270,33 +311,32 @@ const handleConfirmBooking = async (customUserId?: string) => {
           .single();
 
         if (error) throw error;
-        currentBookingId = bookingData.id;
+        
+        const response = await fetch(`${BASE_URL}/api/payment/create`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookingId: bookingData.id,
+            amount: totalAmount,
+            customerName: personalDetails.name,
+            customerEmail: personalDetails.email,
+          }),
+        });
+
+        const result = await response.json();
+        
+        if (!response.ok) {
+           throw new Error(result.error || "Payment initialization failed");
+        }
+
+        // Redirect to Dodo Checkout
+        window.location.href = result.paymentUrl;
+
+      } catch (error: any) {
+        console.error("Booking failed:", error.message);
+        window.alert("Booking failed: " + error.message);
+        setIsSubmitting(false);
       }
-
-      // 2. INITIATE PAYMENT (Call our new API)
-      const response = await fetch("/api/payment/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId: currentBookingId,
-          amount: totalAmount,
-          customerName: personalDetails.name,
-          customerEmail: personalDetails.email,
-        }),
-      });
-
-      const { paymentUrl, error: apiError } = await response.json();
-
-      if (apiError) throw new Error(apiError);
-
-      // 3. REDIRECT TO DODO PAYMENTS
-      // The user leaves your site to pay. Dodo will redirect them back later.
-      window.location.href = paymentUrl;
-
-    } catch (error: any) {
-      console.error("Booking/Payment failed:", error.message);
-      alert("Failed to initiate payment: " + error.message);
-      setIsSubmitting(false);
     }
   };
 
@@ -321,7 +361,7 @@ const handleConfirmBooking = async (customUserId?: string) => {
         const nameDiff = existing.name !== name;
         const emailDiff = existing.email !== email;
 
-        if ((nameDiff || emailDiff) && !isRescheduleMode) { // Don't show conflict on reschedule
+        if ((nameDiff || emailDiff) && !isRescheduleMode) {
           setExistingUser(existing);
           setConflictFields({ name: nameDiff, email: emailDiff });
           setShowConflictDialog(true);
@@ -331,7 +371,7 @@ const handleConfirmBooking = async (customUserId?: string) => {
 
         setUserId(existing.id);
         setShowPersonalDetailsModal(false);
-        handleConfirmBooking(existing.id); // Pass ID
+        handleConfirmBooking(existing.id); 
       } else {
         const { data: newUserData, error: insertError } = await supabase
           .from("users")
@@ -342,14 +382,12 @@ const handleConfirmBooking = async (customUserId?: string) => {
         
         setUserId(newUserData.id);
         setShowPersonalDetailsModal(false);
-        handleConfirmBooking(newUserData.id); // Pass new ID
+        handleConfirmBooking(newUserData.id); 
       }
     } catch (error: any) {
       console.error("Error saving user details:", error.message);
-      alert("Error: " + error.message);
+      window.alert("Error: " + error.message);
     } finally {
-      // Only set submitting false if NOT in reschedule mode
-      // (because reschedule mode has its own finally block)
       if (!isRescheduleMode) {
         setIsSubmitting(false);
       }
@@ -570,7 +608,6 @@ const handleConfirmBooking = async (customUserId?: string) => {
               </div>
             </div>
             
-            {/* --- UPDATED: Disable button based on slot count --- */}
             <div className="hidden md:block">
               <Button
                 className="w-full bg-primary hover:bg-mint-dark text-white rounded-full"
@@ -598,7 +635,6 @@ const handleConfirmBooking = async (customUserId?: string) => {
           <Button
             className="bg-primary hover:bg-mint-dark text-white rounded-full px-6 py-3"
             size="sm"
-            // --- UPDATED: Disable button based on slot count ---
             disabled={!selectedDate || selectedSlots.length === 0 || (isRescheduleMode && selectedSlots.length !== requiredSlotCount)}
             onClick={() => setShowPersonalDetailsModal(true)}
           >
@@ -615,6 +651,9 @@ const handleConfirmBooking = async (customUserId?: string) => {
             <DialogTitle className="flex items-center gap-3 text-xl">
               <User className="h-6 w-6 text-primary" /> Personal Details
             </DialogTitle>
+            <DialogDescription>
+              Please enter your details to complete the booking.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handlePersonalDetailsSubmit} className="space-y-6">
             <div className="space-y-4">
@@ -694,7 +733,7 @@ const handleConfirmBooking = async (customUserId?: string) => {
         </DialogContent>
       </Dialog>
       
-      {/* --- NEW: Reschedule Success Modal --- */}
+      {/* Reschedule Success Modal */}
       <Dialog open={showRescheduleSuccessModal} onOpenChange={() => router.push("/my-bookings")}>
         <DialogContent className="sm:max-w-md bg-card border-border">
           <DialogHeader>
