@@ -13,6 +13,7 @@ import localFont from "next/font/local"
 import { MainNavbar } from "@/components/main-navbar"
 import { Facebook, Twitter, Instagram } from "lucide-react"
 import { AppUpdater } from "@/components/AppUpdater" // 1. Import the updater
+import { VersionDisplay } from "@/components/VersionDisplay";
 
 const qualyNeue = localFont({
   src: [
@@ -130,6 +131,7 @@ export default function RootLayout({
                 </div>
                 <div className="mt-10 pt-6 border-t border-border text-center text-muted-foreground">
                   <p>{new Date().getFullYear()} Khelconnect. All rights reserved.</p>
+                  <VersionDisplay />
                 </div>
               </div>
             </footer>

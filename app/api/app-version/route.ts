@@ -23,5 +23,17 @@ export async function GET() {
     version: LATEST_VERSION,
     downloadUrl: DOWNLOAD_URL,
     forceUpdate: FORCE_UPDATE,
+  }, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      
+      // --- ADD THESE CORS HEADERS ---
+      'Access-Control-Allow-Origin': '*', // Allow any origin (the app)
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      // ------------------------------
+    },
   });
 }
