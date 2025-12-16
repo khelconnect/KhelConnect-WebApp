@@ -4,8 +4,8 @@ import { NextResponse } from "next/server";
 export const dynamic = 'force-static';
 
 // --- CONFIGURATION ---
-const LATEST_VERSION = "1.0.4"; // Update this manually for new releases
-const DOWNLOAD_URL = "https://khelconnect.in/download/khelconnect.apk"; 
+const LATEST_VERSION = "1.0.5"; // Update this manually for new releases
+const DOWNLOAD_URL = "https://github.com/khelconnect/KhelConnect-WebApp/releases/download/v1.0.3/khelconnect.apk"; 
 const FORCE_UPDATE = true; 
 // ---------------------
 
