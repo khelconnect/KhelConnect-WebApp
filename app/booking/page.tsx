@@ -6,6 +6,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { cn } from "@/lib/utils"
 import { format, startOfDay, isBefore, isSameDay } from "date-fns";
 import { supabase } from "@/lib/supabaseClient";
+import { Capacitor } from "@capacitor/core"; // 1. Added Import
 import {
   CalendarIcon,
   Clock,
@@ -197,7 +198,6 @@ export default function BookingPage() {
     }
   }, [turfInfo, formattedDate, turfId, sport]); 
 
-  // --- UPDATED: Handle Consecutive Selection ---
   const handleSlotToggle = (id: string) => {
     const clickedSlotIndex = slots.findIndex((s) => s.id === id);
     if (clickedSlotIndex === -1) return;
@@ -206,7 +206,6 @@ export default function BookingPage() {
 
     if (isSelected) {
       // DESELECTION LOGIC
-      // Sort indices numerically to find true ends
       const currentIndices = selectedSlots
         .map((sId) => slots.findIndex((s) => s.id === sId))
         .sort((a, b) => a - b);
@@ -260,13 +259,10 @@ export default function BookingPage() {
     
     const totalAmount = selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo.price), 0);
 
-    // Use absolute URL for Mobile Apps
-    const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://khelconnect.in";
-
     setIsSubmitting(true);
 
     if (isRescheduleMode) {
-      // Reschedule Flow
+      // Reschedule Logic
       try {
         const { error } = await supabase
           .from("bookings")
@@ -293,7 +289,7 @@ export default function BookingPage() {
       }
       
     } else {
-      // New Booking Flow
+      // New Booking Logic
       try {
         const { data: bookingData, error } = await supabase
           .from("bookings")
@@ -312,7 +308,16 @@ export default function BookingPage() {
 
         if (error) throw error;
         
-        const response = await fetch(`${BASE_URL}/api/payment/create`, {
+        // --- 2. Smart URL Selection (Web vs Mobile) ---
+        let paymentApiUrl = "/api/payment/create"; // Default (Relative)
+
+        if (Capacitor.isNativePlatform()) {
+          // If on Mobile App, use full URL
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://khelconnect.in";
+          paymentApiUrl = `${baseUrl}/api/payment/create`;
+        }
+        
+        const response = await fetch(paymentApiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -329,7 +334,7 @@ export default function BookingPage() {
            throw new Error(result.error || "Payment initialization failed");
         }
 
-        // Redirect to Dodo Checkout
+        // 3. Redirect to Dodo Checkout
         window.location.href = result.paymentUrl;
 
       } catch (error: any) {
@@ -490,6 +495,7 @@ export default function BookingPage() {
                   onSelect={(selected) => {
                     if (selected) {
                       setSelectedDate(selected);
+                      setSelectedSlots([]); // Clear slots on date change
                       setIsCalendarOpen(false);
                     }
                   }}
