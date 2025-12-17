@@ -6,7 +6,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { cn } from "@/lib/utils"
 import { format, startOfDay, isBefore, isSameDay } from "date-fns";
 import { supabase } from "@/lib/supabaseClient";
-import { Capacitor } from "@capacitor/core"; // 1. Added Import
+import { Capacitor, CapacitorHttp } from "@capacitor/core"; // 1. Added CapacitorHttp
 import {
   CalendarIcon,
   Clock,
@@ -205,7 +205,6 @@ export default function BookingPage() {
     const isSelected = selectedSlots.includes(id);
 
     if (isSelected) {
-      // DESELECTION LOGIC
       const currentIndices = selectedSlots
         .map((sId) => slots.findIndex((s) => s.id === sId))
         .sort((a, b) => a - b);
@@ -219,7 +218,6 @@ export default function BookingPage() {
         window.alert("Please deselect slots from the beginning or end of your selection to keep the time block continuous.");
       }
     } else {
-      // SELECTION LOGIC
       if (selectedSlots.length === 0) {
         setSelectedSlots([id]);
         return;
@@ -248,6 +246,8 @@ export default function BookingPage() {
     }
   };
 
+// ... inside BookingPage component
+
   const handleConfirmBooking = async (customUserId?: string) => {
     if (!selectedDate || selectedSlots.length === 0 || !turfInfo || !formattedDate) return;
 
@@ -262,7 +262,7 @@ export default function BookingPage() {
     setIsSubmitting(true);
 
     if (isRescheduleMode) {
-      // Reschedule Logic
+      // --- RESCHEDULE LOGIC ---
       try {
         const { error } = await supabase
           .from("bookings")
@@ -289,7 +289,7 @@ export default function BookingPage() {
       }
       
     } else {
-      // New Booking Logic
+      // --- NEW BOOKING LOGIC ---
       try {
         const { data: bookingData, error } = await supabase
           .from("bookings")
@@ -308,34 +308,69 @@ export default function BookingPage() {
 
         if (error) throw error;
         
-        // --- 2. Smart URL Selection (Web vs Mobile) ---
-        let paymentApiUrl = "/api/payment/create"; // Default (Relative)
+        let paymentUrl = "";
 
+        // --- 2. BRANCHING LOGIC FOR WEB VS NATIVE APP ---
         if (Capacitor.isNativePlatform()) {
-          // If on Mobile App, use full URL
-          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://khelconnect.in";
-          paymentApiUrl = `${baseUrl}/api/payment/create`;
-        }
-        
-        const response = await fetch(paymentApiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            bookingId: bookingData.id,
-            amount: totalAmount,
-            customerName: personalDetails.name,
-            customerEmail: personalDetails.email,
-          }),
-        });
+            // NATIVE APP: Use CapacitorHttp
+            const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://khelconnect.in";
+            const apiUrl = `${baseUrl}/api/payment/create`;
+            
+            // alert(`Debug: Connecting to ${apiUrl}`); // Uncomment if you need to check the URL on phone
 
-        const result = await response.json();
-        
-        if (!response.ok) {
-           throw new Error(result.error || "Payment initialization failed");
+            const response = await CapacitorHttp.post({
+                url: apiUrl,
+                headers: { "Content-Type": "application/json" },
+                data: {
+                    bookingId: bookingData.id,
+                    amount: totalAmount,
+                    customerName: personalDetails.name,
+                    customerEmail: personalDetails.email,
+                }
+            });
+
+            if (response.status !== 200) {
+                // --- ENHANCED DEBUGGING ---
+                console.error("Native Payment API Error:", response);
+                let errorMessage = "Native Payment initialization failed";
+                
+                // Try to extract a useful message
+                if (response.data && typeof response.data === 'object' && response.data.error) {
+                    errorMessage = response.data.error;
+                } else if (response.data) {
+                    // If it's an HTML string (like 404/500 page), truncate it for the alert
+                    errorMessage = typeof response.data === 'string' 
+                        ? `Server Error (${response.status}): ` + response.data.substring(0, 100) 
+                        : `Error: ${JSON.stringify(response.data)}`;
+                }
+                
+                throw new Error(errorMessage);
+            }
+            
+            paymentUrl = response.data.paymentUrl;
+
+        } else {
+            // WEB: Use standard fetch
+            const response = await fetch("/api/payment/create", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    bookingId: bookingData.id,
+                    amount: totalAmount,
+                    customerName: personalDetails.name,
+                    customerEmail: personalDetails.email,
+                }),
+            });
+
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || "Payment initialization failed");
+            }
+            paymentUrl = result.paymentUrl;
         }
 
         // 3. Redirect to Dodo Checkout
-        window.location.href = result.paymentUrl;
+        window.location.href = paymentUrl;
 
       } catch (error: any) {
         console.error("Booking failed:", error.message);
@@ -394,7 +429,8 @@ export default function BookingPage() {
       window.alert("Error: " + error.message);
     } finally {
       if (!isRescheduleMode) {
-        setIsSubmitting(false);
+        // Only stop submitting if not proceeding to booking logic immediately
+        // (booking logic handles its own submitting state)
       }
     }
   };
@@ -495,12 +531,18 @@ export default function BookingPage() {
                   onSelect={(selected) => {
                     if (selected) {
                       setSelectedDate(selected);
-                      setSelectedSlots([]); // Clear slots on date change
                       setIsCalendarOpen(false);
                     }
                   }}
                   initialFocus
-                  disabled={(date) => isBefore(date, startOfDay(new Date()))}
+                  disabled={(date) => {
+                    // Logic to disable dates outside booking window
+                    // (Assuming turfInfo.booking_window_days is available if you added the logic)
+                    const today = startOfDay(new Date());
+                    if (isBefore(date, today)) return true;
+                    // Add window logic here if needed
+                    return false;
+                  }}
                   className="rounded-md border-border"
                 />
               </PopoverContent>
