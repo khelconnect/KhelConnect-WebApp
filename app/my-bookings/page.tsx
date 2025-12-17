@@ -2,33 +2,18 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { format, isPast, isToday } from 'date-fns';
+import { format, isPast, isToday, differenceInHours, addDays, isAfter, differenceInMinutes } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUserStore } from "@/lib/userStore";
 import { 
-  Loader2, 
-  ArrowLeft, 
-  CheckCircle, 
-  XCircle, 
-  RefreshCw, 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  DollarSign, 
-  ChevronRight,
-  Info
+  Loader2, ArrowLeft, Calendar, Clock, DollarSign
 } from 'lucide-react';
-import { 
-  Tabs, 
-  TabsList, 
-  TabsTrigger, 
-  TabsContent 
-} from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -43,8 +28,12 @@ interface DetailedBooking {
   payment_status: string;
   sport: string;
   turf_id: string;
+  reschedule_count: number;
   turfs: {
     name: string;
+    allow_rescheduling: boolean;
+    allow_refunds: boolean;
+    reschedule_window_days: number;
   } | null;
 }
 
@@ -88,7 +77,7 @@ export default function MyBookingsPage() {
     fetchTimeSlots();
   }, []);
   
-  // 2. Optimized booking fetch function
+  // 2. Optimized booking fetch function with Auto-Cleanup
   const fetchBookings = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -109,10 +98,10 @@ export default function MyBookingsPage() {
       setUserId(user.id);
       useUserStore.getState().setName(user.name);
 
-      // THEN, get all bookings for that user with turf name joined
+      // THEN, get all bookings for that user
       const { data: userBookings, error: bookingsError } = await supabase
         .from('bookings')
-        .select('id, date, slot, created_at, amount, status, payment_status, sport, turf_id, turfs(name)')
+        .select('id, date, slot, created_at, amount, status, payment_status, sport, turf_id, reschedule_count, turfs(name, allow_rescheduling, allow_refunds, reschedule_window_days)')
         .eq('user_id', user.id)
         .order('date', { ascending: false });
       
@@ -120,7 +109,35 @@ export default function MyBookingsPage() {
         throw new Error('Could not fetch bookings.');
       }
 
-      setBookings(userBookings as DetailedBooking[] || []);
+      const allBookings = (userBookings as DetailedBooking[]) || [];
+      const now = new Date();
+      const updatedBookings = [];
+
+      // --- AUTO-CANCEL EXPIRED PENDING BOOKINGS ---
+      // This frees up the slot immediately if the Cron job hasn't run yet
+      for (const b of allBookings) {
+        // If pending and older than 15 minutes
+        if (b.status === 'pending' && b.payment_status === 'pending') {
+          const createdTime = new Date(b.created_at);
+          const minutesDiff = differenceInMinutes(now, createdTime);
+          
+          if (minutesDiff > 15) {
+             // It's expired. Mark it locally as cancelled/expired so it moves to History
+             // and fire a background request to update DB to free the slot.
+             const expiredBooking = { ...b, status: 'cancelled', payment_status: 'n/a' }; // UI shows as Cancelled/Expired
+             updatedBookings.push(expiredBooking);
+             
+             // Fire and forget update
+             supabase.from('bookings').update({ status: 'cancelled', payment_status: 'n/a' }).eq('id', b.id).then(({ error }) => {
+               if(error) console.error("Auto-cancel failed for", b.id, error);
+             });
+             continue;
+          }
+        }
+        updatedBookings.push(b);
+      }
+
+      setBookings(updatedBookings);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -128,11 +145,10 @@ export default function MyBookingsPage() {
     }
   }, [phone]);
 
-  // 3. NEW Reschedule Handler (Rule 2)
+  // 3. New Reschedule Handler
   const handleReschedule = useCallback((booking: DetailedBooking) => {
     if (!booking) return;
     
-    // Pass the reschedule ID and the number of slots
     router.push(
       `/booking?sport=${booking.sport}` +
       `&turf=${booking.turf_id}` +
@@ -141,27 +157,58 @@ export default function MyBookingsPage() {
     );
   }, [router]);
 
-  // 4. NEW Cancel Handler (Rule 1)
-  const handleConfirmCancel = useCallback(async (bookingId: string) => {
-    if (!confirm("Are you sure you want to cancel this booking?")) return;
+  // 4. Cancel Handler (Updated Logic)
+  const handleConfirmCancel = useCallback(async (booking: DetailedBooking) => {
+    const ADVANCE_AMOUNT = 350; 
+    let confirmMsg = "";
+    let refundAmount = 0;
     
+    // 1. Check Turf Policy
+    if (!booking.turfs?.allow_refunds) {
+        confirmMsg = `This turf has a strict No Refund policy. If you cancel, you will NOT receive a refund. Proceed?`;
+        refundAmount = 0;
+    } else {
+        // 2. Check Time Window (24 hours)
+        const bookingDate = new Date(booking.date);
+        const hoursDiff = differenceInHours(bookingDate, new Date());
+        
+        if (hoursDiff < 24) {
+             confirmMsg = `Cancellation is within 24 hours. A fee applies (No Refund of Advance). Proceed?`;
+             refundAmount = 0;
+        } else {
+             // 3. Check Payment Status
+             if (booking.payment_status === 'paid') {
+                 confirmMsg = `You are eligible for a refund of ₹${ADVANCE_AMOUNT}. Proceed to cancel?`;
+                 refundAmount = ADVANCE_AMOUNT;
+             } else {
+                 confirmMsg = "Cancel this booking?";
+                 refundAmount = 0;
+             }
+        }
+    }
+
+    if (!confirm(confirmMsg)) return;
+    
+    // 4. Determine new Payment Status
+    const newPaymentStatus = refundAmount > 0 ? 'refund_initiated' : 'n/a';
+
     setIsSubmitting(true);
     try {
       const { error } = await supabase
         .from('bookings')
-        .update({ status: 'cancelled', payment_status: 'refund_initiated' }) // Or just 'n/a'
-        .eq('id', bookingId);
+        .update({ 
+            status: 'cancelled', 
+            payment_status: newPaymentStatus,
+            refund_amount: refundAmount
+        })
+        .eq('id', booking.id);
       
       if (error) throw error;
-      
-      // Refresh bookings list
       fetchBookings();
     } catch (error: any) {
       console.error("Error cancelling booking:", error.message);
       setError("Failed to cancel booking. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    } finally { setIsSubmitting(false); }
   }, [fetchBookings]);
 
   // 5. Helper to convert slot IDs to times
@@ -179,9 +226,10 @@ export default function MyBookingsPage() {
 
     bookings.forEach(b => {
       const bookingDate = new Date(b.date);
-      if (isPast(bookingDate) && !isToday(bookingDate)) {
+      // Explicitly check for cancelled status to move to history immediately
+      if (b.status === 'cancelled' || b.status === 'completed') {
         past.push(b);
-      } else if (b.status === 'cancelled' || b.status === 'completed') {
+      } else if (isPast(bookingDate) && !isToday(bookingDate)) {
         past.push(b);
       } else {
         upcoming.push(b);
@@ -274,9 +322,6 @@ export default function MyBookingsPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* The Cancel/Reschedule Dialog is no longer needed */}
-
     </main>
   );
 }
@@ -291,15 +336,36 @@ function BookingCard({
 }: { 
   booking: DetailedBooking, 
   getSlotTimes: (ids: string[]) => string,
-  onCancelClick?: (id: string) => void,
+  onCancelClick?: (booking: DetailedBooking) => void,
   onRescheduleClick?: (booking: DetailedBooking) => void
 }) {
   
-  // --- UPDATED LOGIC (Rule 1 & 2) ---
   const isPending = booking.payment_status === 'pending';
   const isPaid = booking.payment_status === 'paid';
   const isActive = booking.status === 'pending' || booking.status === 'confirmed';
-  // --- End Updated Logic ---
+  const isExpired = booking.status === 'cancelled' && booking.payment_status === 'n/a';
+  
+  // --- RESCHEDULE RULES ---
+  const settings = booking.turfs;
+  const rescheduleCount = booking.reschedule_count || 0;
+  
+  let showReschedule = settings?.allow_rescheduling ?? true;
+  
+  // Rule: Allowed Once?
+  if (rescheduleCount >= 1) {
+    showReschedule = false;
+  }
+  
+  // Rule: Within Reschedule Window?
+  if (showReschedule && settings?.reschedule_window_days) {
+    const bookingDate = new Date(booking.date);
+    const maxRescheduleDate = addDays(new Date(), settings.reschedule_window_days);
+    
+    // You can only reschedule bookings that are within the allowed window from today
+    if (isAfter(bookingDate, maxRescheduleDate)) {
+        showReschedule = false;
+    }
+  }
 
   return (
     <motion.div
@@ -308,11 +374,18 @@ function BookingCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -50 }}
       transition={{ duration: 0.3 }}
-      className="bg-secondary border border-border rounded-xl p-4 shadow-sm"
+      className={cn(
+        "bg-secondary border border-border rounded-xl p-4 shadow-sm",
+        isExpired && "opacity-60"
+      )}
     >
       <div className="flex justify-between items-start">
         <h3 className="font-semibold text-lg">{booking.turfs?.name || "Unknown Turf"}</h3>
-        <StatusBadge status={booking.status} />
+        <div className="flex flex-col items-end gap-1">
+            {/* Show "Expired" if it was auto-cancelled due to non-payment */}
+            {isExpired ? <Badge variant="secondary" className="bg-gray-500/20 text-gray-500 hover:bg-gray-500/30">Expired</Badge> : <StatusBadge status={booking.status} />}
+            {rescheduleCount > 0 && <Badge variant="outline" className="text-[10px]">Rescheduled</Badge>}
+        </div>
       </div>
       
       <div className="mt-2 space-y-1 text-sm text-muted-foreground">
@@ -326,28 +399,44 @@ function BookingCard({
           <StatusBadge status={booking.payment_status} />
         </div>
         
-        {/* --- UPDATED BUTTONS (Rule 1 & 2) --- */}
-        {isActive && isPending && onCancelClick && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => onCancelClick(booking.id)}
-          >
-            Cancel
-          </Button>
-        )}
-        
-        {isActive && isPaid && onRescheduleClick && (
-          <Button
-            variant="default" // Use default color for reschedule
-            size="sm"
-            onClick={() => onRescheduleClick(booking)}
-          >
-            Reschedule
-          </Button>
-        )}
-        {/* --- END UPDATED BUTTONS --- */}
+        <div className="flex gap-2">
+            {isActive && isPending && onCancelClick && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => onCancelClick(booking)}
+              >
+                Cancel
+              </Button>
+            )}
+            
+            {/* UPDATED BUTTON LOGIC:
+               1. Show Reschedule if: Active, Paid, Allowed by Settings
+            */}
+            {isActive && isPaid && showReschedule && onRescheduleClick && (
+              <Button
+                variant="default" 
+                size="sm"
+                onClick={() => onRescheduleClick(booking)}
+              >
+                Reschedule
+              </Button>
+            )}
 
+            {/* 2. Show Cancel if: Active AND Paid.
+               This shows ALONGSIDE Reschedule, or alone if Reschedule is disallowed.
+            */}
+            {isActive && isPaid && onCancelClick && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive border-destructive hover:bg-destructive/10"
+                onClick={() => onCancelClick(booking)}
+              >
+                Cancel
+              </Button>
+            )}
+        </div>
       </div>
     </motion.div>
   );

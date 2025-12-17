@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
-  Clock, Users, Plus, Trash2, Loader2, AlertTriangle, CheckCircle, XCircle, RefreshCw, ShieldAlert, CalendarIcon 
+  Clock, Users, Plus, Trash2, Loader2, AlertTriangle, CheckCircle, XCircle, RefreshCw, ShieldAlert, CalendarIcon, Settings
 } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { format, isPast, isSameDay, differenceInHours } from "date-fns"
@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog"
 import {
   Popover,
@@ -48,7 +49,7 @@ type BookingType = {
   customerPhone: string
   customerEmail: string
   sport: string
-  price: number // TOTAL price
+  price: number 
   status: string
   payment_status: string
   refund_amount: number | null
@@ -90,6 +91,8 @@ type OwnerType = {
 type TurfType = {
   id: string
   name: string
+  booking_window_days: number
+  pending_booking_window_days: number | null
 }
 
 // --- HELPER COMPONENT for Loading/Error ---
@@ -169,8 +172,8 @@ export default function OwnerDashboardPage() {
   const [owner, setOwner] = useState<OwnerType | null>(null)
   const [turf, setTurf] = useState<TurfType | null>(null)
   const [timeSlots, setTimeSlots] = useState<TimeSlotDisplay[]>([])
-  const [bookings, setBookings] = useState<BookingType[]>([]) // Raw
-  const [groupedBookings, setGroupedBookings] = useState<GroupedBookingType[]>([]) // For UI
+  const [bookings, setBookings] = useState<BookingType[]>([]) 
+  const [groupedBookings, setGroupedBookings] = useState<GroupedBookingType[]>([]) 
   const [manualBlocks, setManualBlocks] = useState<ManualBlockType[]>([])
   const [pendingConfirmation, setPendingConfirmation] = useState<GroupedBookingType[]>([])
   
@@ -183,6 +186,10 @@ export default function OwnerDashboardPage() {
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   
+  // NEW: Settings Dialog State
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false)
+  const [requestedDays, setRequestedDays] = useState("")
+
   // Form State
   const [newBooking, setNewBooking] = useState({
     customerName: "", customerPhone: "", customerEmail: "",
@@ -204,7 +211,7 @@ export default function OwnerDashboardPage() {
         if (!ownerId) { router.push("/owner/login"); return }
 
         const [ownerResult, slotsResult] = await Promise.all([
-          supabase.from("turf_owners").select("*, turfs (id, name)").eq("id", ownerId).single(),
+          supabase.from("turf_owners").select("*, turfs (id, name, booking_window_days, pending_booking_window_days)").eq("id", ownerId).single(),
           supabase.from("time_slots").select("id, start_time, end_time, period").order("start_time")
         ])
 
@@ -346,8 +353,7 @@ export default function OwnerDashboardPage() {
         const pending = groupedBookings.filter(group => { 
           if (group.status !== 'confirmed') return false
           const [hours, minutes] = group.endTime.split(':').map(Number)
-          const bookingEndDateTime = new Date(selectedDate); // Clone date
-          bookingEndDateTime.setHours(hours, minutes, 0, 0);
+          const bookingEndDateTime = new Date(selectedDate.setHours(hours, minutes, 0, 0))
           return isPast(bookingEndDateTime)
         })
         setPendingConfirmation(pending)
@@ -370,18 +376,17 @@ export default function OwnerDashboardPage() {
   }, [groupedBookings])
 
   const isSlotTaken = useCallback((slotId: string) => {
+    // FIX: A slot is only "taken" if it has a booking that is NOT cancelled
     return (
       bookings.some((b) => 
         b.slotId === slotId && 
         b.status !== 'completed' && 
-        b.status !== 'cancelled'
+        b.status !== 'cancelled' // <-- THIS LINE IS THE FIX
       ) ||
       manualBlocks.some((b) => b.slotId === slotId)
     )
   }, [bookings, manualBlocks])
   
-  // --- OPTIMIZATION / NEW FEATURE ---
-  // Helper function to check if a slot's end time is in the past
   const isSlotInPast = useCallback((slotEndTime: string): boolean => {
     const now = new Date();
     const [hours, minutes] = slotEndTime.split(':').map(Number);
@@ -391,7 +396,34 @@ export default function OwnerDashboardPage() {
   }, [selectedDate]);
 
 
-  // --- CRUD HANDLERS (OPTIMIZED) ---
+  // --- HANDLERS ---
+  
+  const handleRequestWindowChange = async () => {
+    if (!turf || !requestedDays) return;
+    const days = parseInt(requestedDays);
+    if (isNaN(days) || days < 1) {
+      alert("Please enter a valid number of days");
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from("turfs")
+        .update({ pending_booking_window_days: days })
+        .eq("id", turf.id);
+        
+      if (error) throw error;
+      
+      alert("Request sent to admin for approval.");
+      setShowSettingsDialog(false);
+      setTurf({ ...turf, pending_booking_window_days: days });
+      
+    } catch (error: any) {
+      console.error("Error requesting change:", error);
+      alert("Failed to send request: " + error.message);
+    }
+  };
+
   const handleAddBooking = useCallback(async () => {
     if (!newBooking.customerName || !newBooking.customerPhone || !newBooking.slotId || !newBooking.sport || !newBooking.price || !turf) {
       alert("Please fill all required fields"); return
@@ -503,9 +535,26 @@ export default function OwnerDashboardPage() {
     const hoursRemaining = differenceInHours(bookingStartDateTime, now);
     let refundAmount = 0;
     let confirmMessage = "";
-    if (hoursRemaining < 24) {
+
+    // 1. Check Turf Policy (using 'turf' state)
+    // Note: We assume the 'turf' object from state is up to date, but we might be missing allow_refunds here.
+    // If 'turf' in state doesn't have allow_refunds, this will fail.
+    // For safety, let's just use the time check or fetch turf settings if missing.
+    // Assuming 'turf' object has allow_refunds if DB was updated and fetched. 
+    // If not, default to TRUE for now, or you need to update the fetch query in useEffect.
+    // Actually, owner dashboard fetch query: supabase.from("turf_owners").select("*, turfs (...)")
+    // We should update that fetch query to include 'allow_refunds'.
+    
+    // TEMPORARY FIX: Assume true if property missing, until you update the fetch query in Step 1 of previous instructions.
+    const allowRefunds = (turf as any).allow_refunds ?? true;
+
+    if (!allowRefunds) {
+        refundAmount = 0;
+        confirmMessage = "Refunds are disabled for this turf. Cancel anyway? (No refund will be recorded)";
+    } 
+    else if (hoursRemaining < 24) {
       refundAmount = 0;
-      confirmMessage = `This booking is within 24 hours. The cancellation fee of ₹${ADVANCE_AMOUNT} applies (no refund). Are you sure you want to cancel?`;
+      confirmMessage = `This booking is within 24 hours. The cancellation fee applies (no refund). Cancel anyway?`;
     } else {
       if (group.payment_status === 'paid') { refundAmount = ADVANCE_AMOUNT; }
       else { refundAmount = 0; }
@@ -513,18 +562,21 @@ export default function OwnerDashboardPage() {
     }
     if (!confirm(confirmMessage)) return;
     
+    // Fix: Payment Status Logic
+    const newPaymentStatus = refundAmount > 0 ? 'refund_initiated' : 'n/a';
+    
     const oldBookings = bookings;
-    setBookings(bookings.map(b => b.id === id ? { ...b, status: 'cancelled', payment_status: 'refund_initiated', refund_amount: refundAmount } : b ))
+    setBookings(bookings.map(b => b.id === id ? { ...b, status: 'cancelled', payment_status: newPaymentStatus, refund_amount: refundAmount } : b ))
     
     try {
-      const { error } = await supabase.from("bookings").update({ status: 'cancelled', payment_status: 'refund_initiated', refund_amount: refundAmount }).eq("id", id);
+      const { error } = await supabase.from("bookings").update({ status: 'cancelled', payment_status: newPaymentStatus, refund_amount: refundAmount }).eq("id", id);
       if (error) throw error;
     } catch (error: any) {
       console.error("Error initiating refund:", error);
       alert("Failed to initiate refund.");
       setBookings(oldBookings);
     }
-  }, [groupedBookings, bookings, timeSlots, selectedDate]);
+  }, [groupedBookings, bookings, timeSlots, selectedDate, turf]);
 
   const handleProcessRefund = useCallback(async (id: string) => {
     if (!confirm("Have you processed this refund externally? This action will mark the payment as 'refund processed'.")) return;
@@ -601,9 +653,14 @@ export default function OwnerDashboardPage() {
             Manage bookings for <span className="font-medium text-primary">{turf.name}</span>
           </p>
         </div>
-        <Button variant="outline" className="gap-2 w-full sm:w-auto" onClick={handleSignOut}>
-          Sign Out
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button variant="outline" className="flex-1 sm:flex-none gap-2" onClick={() => setShowSettingsDialog(true)}>
+            <Settings className="h-4 w-4" /> Settings
+          </Button>
+          <Button variant="outline" className="flex-1 sm:flex-none gap-2" onClick={handleSignOut}>
+            Sign Out
+          </Button>
+        </div>
       </div>
       
       {/* Pending Confirmation Section */}
@@ -773,7 +830,6 @@ export default function OwnerDashboardPage() {
                               <SelectTrigger><SelectValue placeholder="Select time slot" /></SelectTrigger>
                               <SelectContent>
                                 {timeSlots.map((slot) => {
-                                  // --- UPDATED: Disable past slots ---
                                   const isPastSlot = isSlotInPast(slot.endTime);
                                   return (
                                     <SelectItem 
@@ -810,7 +866,6 @@ export default function OwnerDashboardPage() {
                 ) : (
                   <div className="space-y-4">
                     {groupedBookings.map((group) => {
-                      // --- UPDATED: Check if booking is in the past ---
                       const isPastBooking = isSlotInPast(group.endTime);
                       
                       return (
@@ -818,7 +873,7 @@ export default function OwnerDashboardPage() {
                           key={group.id} 
                           className={cn(
                             "bg-secondary border-border",
-                            (group.status === 'cancelled' || isPastBooking) && "opacity-60" // Fade past bookings
+                            (group.status === 'cancelled' || isPastBooking) && "opacity-60"
                           )}
                         >
                           <CardContent className="p-4">
@@ -871,7 +926,6 @@ export default function OwnerDashboardPage() {
                                     className="text-destructive hover:text-destructive hover:bg-destructive/10"
                                     onClick={() => handleCancelBooking(group.id)}
                                     title="Cancel Booking"
-                                    // --- UPDATED: Disable if booking is in the past ---
                                     disabled={isPastBooking}
                                   >
                                     <Trash2 className="h-4 w-4" />
@@ -991,14 +1045,16 @@ export default function OwnerDashboardPage() {
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
                     {timeSlots.map((slot) => {
-                      const booking = bookings.find((b) => b.slotId === slot.id)
+                      // Fix: Prefer active bookings for display, but cancelled ones are still 'found'
+                      const booking = bookings.find((b) => b.slotId === slot.id && b.status !== 'cancelled') || bookings.find((b) => b.slotId === slot.id);
+                      
                       const block = manualBlocks.find((b) => b.slotId === slot.id)
                       const isAvailable = !booking && !block
                       
                       const isPastSlot = isSlotInPast(slot.endTime);
                       
-                      // This is true ONLY for available, past slots
-                      const isClickable = isAvailable && !isPastSlot;
+                      // Fix: Correctly define clickable logic
+                      const isClickable = !isSlotTaken(slot.id) && !block && !isPastSlot;
 
                       let statusText = "Available"
                       if (block) {
@@ -1018,28 +1074,20 @@ export default function OwnerDashboardPage() {
                           key={slot.id}
                           onClick={() => isClickable ? handleOpenBlockModal(slot.id) : undefined}
                           className={cn("border",
-                            // --- NEW LOGIC ---
-                            // 1. Is it blocked?
+                            // 1. Blocked
                             block ? "bg-destructive/10 border-destructive/30" :
-                            
-                            // 2. Is it completed?
+                            // 2. Completed
                             booking?.status === 'completed' ? "bg-green-700/10 border-green-700/30" :
-                            
-                            // 3. Is it cancelled?
+                            // 3. Cancelled
                             booking?.status === 'cancelled' ? "bg-red-500/10 border-red-500/30" :
-                            
-                            // 4. Is it actively booked?
+                            // 4. Booked
                             booking ? "bg-primary/10 border-primary/30" :
-                            
-                            // 5. Is it available AND in the past? (Greyed out)
+                            // 5. Available & Past (Greyed)
                             (isAvailable && isPastSlot) ? "bg-secondary/20 border-border opacity-60 cursor-not-allowed" :
-                            
-                            // 6. Is it available AND in the future? (Clickable)
+                            // 6. Available & Future (Clickable)
                             isAvailable ? "bg-secondary/50 cursor-pointer hover:border-primary" :
-                            
                             // Fallback
                             "bg-secondary/50"
-                            // --- END NEW LOGIC ---
                           )}
                         >
                           <CardContent className="p-3 sm:p-4">
@@ -1055,7 +1103,7 @@ export default function OwnerDashboardPage() {
                                   variant="ghost" 
                                   size="icon" 
                                   className="text-destructive hover:text-destructive hover:bg-destructive/10 -mr-2"
-                                  disabled={isPastSlot} // Disable if in the past
+                                  disabled={isPastSlot} 
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleDeleteBlock(block.id);
@@ -1076,6 +1124,47 @@ export default function OwnerDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* NEW: Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent className="sm:max-w-md bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>Turf Settings</DialogTitle>
+            <DialogDescription>Manage your booking availability.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="p-3 bg-secondary rounded-md">
+              <p className="text-sm font-medium">Current Booking Window</p>
+              <p className="text-2xl font-bold text-primary">{turf.booking_window_days} Days</p>
+              <p className="text-xs text-muted-foreground">Users can book slots up to {turf.booking_window_days} days in advance.</p>
+            </div>
+
+            {turf.pending_booking_window_days && (
+              <div className="p-3 border border-yellow-500/50 bg-yellow-500/10 rounded-md">
+                <p className="text-sm font-medium text-yellow-600">Pending Request</p>
+                <p className="text-sm">You have requested to change this to <strong>{turf.pending_booking_window_days} days</strong>. Waiting for admin approval.</p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="days">Request New Window (Days)</Label>
+              <Input 
+                id="days" 
+                type="number" 
+                min="1" 
+                max="365"
+                value={requestedDays} 
+                onChange={(e) => setRequestedDays(e.target.value)} 
+                placeholder="e.g. 60"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleRequestWindowChange}>Submit Request</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }

@@ -38,29 +38,34 @@ interface Turf {
   distance: string;
   sports: string[];
   turf_owner_id: string | null;
+  booking_window_days: number;
+  pending_booking_window_days: number | null;
+  allow_rescheduling: boolean;
+  allow_refunds: boolean;
+  reschedule_window_days: number;
 }
 
 type TimeSlotDisplay = {
-  id: string
-  time: string
-  endTime: string
-  period: string // 'day' or 'evening'
+  id: string;
+  time: string;
+  endTime: string;
+  period: string; // 'day' or 'evening'
 }
 
 type BookingType = {
-  id: string
-  date: string
-  slot: string
-  slotId: string
-  customerName: string
-  status: string
-  payment_status: string
+  id: string;
+  date: string;
+  slot: string;
+  slotId: string;
+  customerName: string;
+  status: string;
+  payment_status: string;
 }
 
 type ManualBlockType = {
-  id: string
-  slotId: string
-  reason: string | null
+  id: string;
+  slotId: string;
+  reason: string | null;
 }
 
 type PriceRule = {
@@ -73,6 +78,8 @@ type PriceRule = {
   day_of_week?: number;
   date?: string;
   period?: string;
+  start_time?: string;
+  end_time?: string;
   day_type?: 'weekday' | 'weekend';
 }
 
@@ -116,6 +123,10 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
       amenities: formData.amenities.split(',').map((a) => a.trim()).filter(Boolean),
       sports: formData.sports,
       turf_owner_id: formData.turf_owner_id || null,
+      allow_rescheduling: true,
+      allow_refunds: true,
+      booking_window_days: 30,
+      reschedule_window_days: 30
     };
     try {
       const { error } = await supabase.from('turfs').insert([payload]);
@@ -245,7 +256,6 @@ function TurfListingGrid({ onSelectTurf }: { onSelectTurf: (turf: Turf, sport: s
 
   return (
     <div>
-      {/* Sports Slider */}
       <h2 className="text-lg font-semibold mb-3">Filter by Sport</h2>
       <ScrollArea className="w-full whitespace-nowrap rounded-md pb-4">
         <div className="flex space-x-3">
@@ -269,9 +279,7 @@ function TurfListingGrid({ onSelectTurf }: { onSelectTurf: (turf: Turf, sport: s
         </div>
       </ScrollArea>
 
-      {/* Turf Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
-        {/* Add New Turf Card */}
         <Card
           className="overflow-hidden bg-card border-border rounded-3xl flex items-center justify-center min-h-[400px] border-2 border-dashed hover:border-primary hover:bg-secondary cursor-pointer"
           onClick={() => setShowAddDialog(true)}
@@ -354,11 +362,9 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
   const [manualBlocks, setManualBlocks] = useState<ManualBlockType[]>([]);
   const [isBookingsLoading, setIsBookingsLoading] = useState(true);
   
-  // Turf Card Edit State
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   const [inlineData, setInlineData] = useState<Turf>(turf);
   
-  // Pricing Edit State
   const [isPriceEditing, setIsPriceEditing] = useState(false);
   const [inlineBasePrice, setInlineBasePrice] = useState(turf.price.toString());
   const [dayPrice, setDayPrice] = useState("");
@@ -368,15 +374,14 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   
-  // Dialog States
   const [showSlotPriceDialog, setShowSlotPriceDialog] = useState(false);
   const [showDayPriceDialog, setShowDayPriceDialog] = useState(false);
+  const [showPeriodPriceDialog, setShowPeriodPriceDialog] = useState(false);
   const [showApplyDialog, setShowApplyDialog] = useState(false);
   const [showConflictDialog, setShowConflictDialog] = useState(false);
   const [currentPriceChange, setCurrentPriceChange] = useState<any>(null);
   const [conflictingRule, setConflictingRule] = useState<PriceRule | null>(null);
   
-  // Original Pricing Rules
   const [owners, setOwners] = useState<any[]>([]);
   const [pricingRules, setPricingRules] = useState<any[]>([]);
   const [showRuleDialog, setShowRuleDialog] = useState(false);
@@ -488,6 +493,10 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
         ? (inlineData.amenities as string).split(',').map((a: string) => a.trim())
         : inlineData.amenities,
       sports: inlineData.sports, 
+      allow_rescheduling: inlineData.allow_rescheduling,
+      allow_refunds: inlineData.allow_refunds,
+      booking_window_days: parseInt(inlineData.booking_window_days as any) || 30,
+      reschedule_window_days: parseInt(inlineData.reschedule_window_days as any) || 30,
     };
     try {
       const { data, error } = await supabase
@@ -516,7 +525,48 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
     });
   };
 
-  // --- NEW PRICING HANDLERS ---
+  // --- Handlers for Booking Window Approval ---
+  const handleApproveWindow = async () => {
+    if (!inlineData.pending_booking_window_days) return;
+    const days = inlineData.pending_booking_window_days;
+    try {
+      const { error } = await supabase
+        .from("turfs")
+        .update({
+          booking_window_days: days,
+          pending_booking_window_days: null
+        })
+        .eq("id", turf.id);
+        
+      if (error) throw error;
+      
+      setInlineData(prev => ({ 
+        ...prev, 
+        booking_window_days: days, 
+        pending_booking_window_days: null 
+      }));
+      alert(`Approved! Booking window set to ${days} days.`);
+    } catch (e: any) {
+      alert("Error approving: " + e.message);
+    }
+  };
+
+  const handleRejectWindow = async () => {
+    try {
+      const { error } = await supabase
+        .from("turfs")
+        .update({ pending_booking_window_days: null })
+        .eq("id", turf.id);
+        
+      if (error) throw error;
+      setInlineData(prev => ({ ...prev, pending_booking_window_days: null }));
+      alert("Request rejected.");
+    } catch (e: any) {
+      alert("Error rejecting: " + e.message);
+    }
+  };
+
+  // --- PRICING HANDLERS ---
   
   const findDirectConflict = async (rule: Omit<PriceRule, 'id' | 'price'>): Promise<PriceRule | null> => {
     let query = supabase.from('turf_prices')
@@ -525,20 +575,11 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
       .eq('sport', rule.sport)
       .eq('priority', rule.priority);
       
-    if (rule.date) query = query.eq('date', rule.date);
-    else query = query.is('date', null);
-    
-    if (rule.day_of_week) query = query.eq('day_of_week', rule.day_of_week);
-    else query = query.is('day_of_week', null);
-
-    if (rule.slot_id) query = query.eq('slot_id', rule.slot_id);
-    else query = query.is('slot_id', null);
-
-    if (rule.period) query = query.eq('period', rule.period);
-    else query = query.is('period', null);
-
-    if (rule.day_type) query = query.eq('day_type', rule.day_type);
-    else query = query.is('day_type', null);
+    if (rule.date) query = query.eq('date', rule.date); else query = query.is('date', null);
+    if (rule.day_of_week) query = query.eq('day_of_week', rule.day_of_week); else query = query.is('day_of_week', null);
+    if (rule.slot_id) query = query.eq('slot_id', rule.slot_id); else query = query.is('slot_id', null);
+    if (rule.period) query = query.eq('period', rule.period); else query = query.is('period', null);
+    if (rule.day_type) query = query.eq('day_type', rule.day_type); else query = query.is('day_type', null);
     
     try {
       const { data, error } = await query.maybeSingle();
@@ -551,24 +592,16 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
   };
   
   const savePriceRule = async (rule: Omit<PriceRule, 'id'>) => {
-    if (!confirm("Are you sure you want to save this price rule?")) return;
-    
     try {
       const conflict = await findDirectConflict(rule);
       if (conflict) {
         setConflictingRule(conflict);
         setCurrentPriceChange({ ...rule, id: conflict.id });
         setShowConflictDialog(true);
-        return; // Stop, wait for user input
+        return;
       }
-      
       const { error } = await supabase.from('turf_prices').insert(rule);
       if (error) throw error;
-      
-      alert("Price rule saved!");
-      resetPriceDialogs();
-      fetchPricingRules(sport);
-
     } catch (error: any) {
       console.error("Error saving price rule:", error);
       alert("Error: " + error.message);
@@ -577,19 +610,15 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
 
   const handleOverrideRule = async () => {
     if (!conflictingRule || !currentPriceChange) return;
-    
     try {
       const { error } = await supabase
         .from('turf_prices')
         .update({ price: currentPriceChange.price })
         .eq('id', conflictingRule.id);
-      
       if (error) throw error;
-      
       alert("Rule overridden successfully!");
       resetPriceDialogs();
       fetchPricingRules(sport);
-
     } catch (error: any) {
       console.error("Error overriding rule:", error);
       alert("Error: " + error.message);
@@ -600,6 +629,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
     setShowSlotPriceDialog(false);
     setShowDayPriceDialog(false);
     setShowApplyDialog(false);
+    setShowPeriodPriceDialog(false);
     setShowConflictDialog(false);
     setCurrentPriceChange(null);
     setConflictingRule(null);
@@ -625,57 +655,46 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
     setShowSlotPriceDialog(true);
   };
   
-  // --- THIS FUNCTION IS NOW FIXED ---
   const handleSaveSlotPriceRule = async (applyType: 'date_only' | 'every_day' | 'weekday' | 'weekend') => {
-    // 1. Get the data from the state
     const { type, slots, price } = currentPriceChange;
-    if (type !== 'slot' || !slots || !price) {
-      alert("Error: Price or slots not set.");
-      return;
-    }
-    
+    if (type !== 'slot' || !slots || !price) { alert("Error: Price or slots not set."); return; }
     if (!confirm("Are you sure you want to save this price rule?")) return;
 
     const date = selectedDate;
     const rulesToInsert: Omit<PriceRule, 'id'>[] = [];
 
-    // 2. Build a list of rules to create
     slots.forEach((slotId: string) => {
       let rule: Omit<PriceRule, 'id'> = {
         turf_id: turf.id,
         sport: sport,
         price: parseFloat(price),
         slot_id: slotId,
-        priority: 0 // Default
+        priority: 0 
       };
 
-      // 3. Set the correct priority based on the user's choice
       if (applyType === 'date_only') {
         rule.date = format(date, "yyyy-MM-dd");
-        rule.priority = 30; // Specific Slot on Specific Date
+        rule.priority = 30; // Slot + Date (Highest)
       } else if (applyType === 'every_day') {
-        rule.priority = 20; // Specific Slot, Every Day
+        rule.priority = 20; // Slot only
       } else if (applyType === 'weekday') {
         rule.day_type = 'weekday';
-        rule.priority = 25; // Specific Slot, on Weekdays
+        rule.priority = 25; // Slot + Day Type
       } else if (applyType === 'weekend') {
         rule.day_type = 'weekend';
-        rule.priority = 25; // Specific Slot, on Weekends
+        rule.priority = 25; // Slot + Day Type
       }
       rulesToInsert.push(rule);
     });
     
-    // 4. --- THIS IS THE FIX ---
-    // Loop through ALL rules and save them one by one.
+    // Save ALL rules
     try {
       for (const rule of rulesToInsert) {
-        await savePriceRule(rule); // This will handle conflicts for each rule
+        await savePriceRule(rule); 
       }
-      
       alert("Price rules saved successfully!");
-      resetPriceDialogs(); // Reset all dialogs
-      fetchPricingRules(sport); // Refresh the list
-
+      resetPriceDialogs();
+      fetchPricingRules(sport);
     } catch (error: any) {
       console.error("Error in batch save:", error);
       alert("An error occurred while saving the rules. " + error.message);
@@ -687,21 +706,22 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
     if (!price || !date || !sport) { alert("Missing data."); return; }
     
     let rule: Omit<PriceRule, 'id'> = { 
-      turf_id: turf.id, 
-      sport: sport, 
-      price: parseFloat(price),
-      priority: 0 // Default
+      turf_id: turf.id, sport: sport, price: parseFloat(price), priority: 0 
     };
 
     if (applyType === 'date_only') {
       rule.date = format(date, "yyyy-MM-dd");
-      rule.priority = 15; // All slots on Specific Date
+      rule.priority = 15; // Date only
     } else if (applyType === 'every_day_of_week') {
       rule.day_of_week = getDay(date);
-      rule.priority = 10; // All slots on Specific Day of Week
+      rule.priority = 10; // Day of week only
     }
     
-    savePriceRule(rule); // This will handle confirmation and conflicts
+    if (!confirm("Are you sure you want to save this price rule?")) return;
+    await savePriceRule(rule);
+    alert("Price rule saved!");
+    resetPriceDialogs();
+    fetchPricingRules(sport);
   };
 
   const handleSetDayPrice = () => {
@@ -718,62 +738,64 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
   const handleSaveBulkPrice = (dayType: 'weekday' | 'weekend') => {
     const price = dayType === 'weekday' ? weekdayPrice : weekendPrice;
     if (!price) { alert(`Please enter a price for ${dayType}s.`); return; }
+    if (!confirm(`Set price for all ${dayType}s to ₹${price}?`)) return;
 
     const rule: Omit<PriceRule, 'id'> = {
-      turf_id: turf.id,
-      sport: sport,
-      price: parseFloat(price),
-      day_type: dayType,
-      priority: 1, // Lowest priority
+      turf_id: turf.id, sport: sport, price: parseFloat(price),
+      day_type: dayType, priority: 1, 
     };
-    
-    savePriceRule(rule);
+    savePriceRule(rule).then(() => {
+       alert("Price rule saved!");
+       fetchPricingRules(sport);
+    });
   };
-  
-  const handleSavePeriodPrice = (period: 'day' | 'evening') => {
+
+  const handleSetPeriodPrice = (period: 'day' | 'evening') => {
     const price = periodPrices[period];
     if (!price) { alert(`Please enter a price for ${period} slots.`); return; }
+    if (!confirm(`Set price for ${period} slots to ₹${price}?`)) return;
+    setCurrentPriceChange({ type: 'period', price: price, period: period });
+    setShowPeriodPriceDialog(true);
+  };
+  
+  const handleSavePeriodPriceRule = async (applyType: 'date_only' | 'every_day') => {
+    const { price, period } = currentPriceChange;
+    if (!price || !period || !sport) { alert("Missing data."); return; }
     
-    const rule: Omit<PriceRule, 'id'> = {
-      turf_id: turf.id,
-      sport: sport,
-      price: parseFloat(price),
-      period: period,
-      priority: 5, // Higher than bulk, lower than day-of-week
+    let rule: Omit<PriceRule, 'id'> = { 
+      turf_id: turf.id, sport: sport, price: parseFloat(price),
+      period: period, priority: 0 
     };
+
+    if (applyType === 'date_only') {
+      rule.date = format(selectedDate, "yyyy-MM-dd");
+      rule.priority = 18; // Period on date
+    } else if (applyType === 'every_day') {
+      rule.priority = 5; // Period general
+    }
     
-    savePriceRule(rule);
+    if (!confirm("Are you sure you want to save this price rule?")) return;
+    await savePriceRule(rule);
+    alert("Price rule saved!");
+    resetPriceDialogs();
+    fetchPricingRules(sport);
   };
 
-  // --- THIS FUNCTION IS NOW NEEDED ---
   const handleSaveOldRule = async () => {
     const payload: Omit<PriceRule, 'id'> = {
-      turf_id: turf.id,
-      sport: sport,
-      price: parseFloat(ruleForm.price || '0'),
+      turf_id: turf.id, sport: sport, price: parseFloat(ruleForm.price || '0'),
       priority: parseInt(ruleForm.priority || '1'),
     };
     switch (ruleForm.ruleType) {
-      case 'slot': 
-        payload.slot_id = ruleForm.slotId; 
-        break;
-      case 'day_of_week': 
-        payload.day_of_week = parseInt(ruleForm.dayOfWeek!); 
-        break;
-      case 'date': 
-        payload.date = ruleForm.date; 
-        break;
-      case 'range':
-        payload.start_time = ruleForm.startTime;
-        payload.end_time = ruleForm.endTime;
-        break;
-      case 'period':
-        payload.period = ruleForm.period;
-        // payload.day_type = ruleForm.dayType;
-        break;
+      case 'slot': payload.slot_id = ruleForm.slotId; break;
+      case 'day_of_week': payload.day_of_week = parseInt(ruleForm.dayOfWeek!); break;
+      case 'date': payload.date = ruleForm.date; break;
+      case 'range': payload.start_time = ruleForm.startTime; payload.end_time = ruleForm.endTime; break;
+      case 'period': payload.period = ruleForm.period; break;
     }
     await savePriceRule(payload);
-    setRuleForm({ ruleType: 'slot', dayType: 'weekday', priority: '1', price: '' });
+    alert("Rule saved.");
+    fetchPricingRules(sport);
     setShowRuleDialog(false);
   };
 
@@ -795,6 +817,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
         </div>
       </div>
 
+      {/* Turf Detail Card */}
       <Card className="overflow-hidden bg-card border-border rounded-3xl mb-6">
         <CardContent className="p-0 flex flex-col md:flex-row">
           <div className="w-full md:w-1/3 aspect-video md:aspect-square relative">
@@ -867,13 +890,92 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
                 </Select>
               ) : <p className="text-sm">{owners.find(o => o.id === inlineData.turf_owner_id)?.name || 'N/A'}</p>}
             </div>
+
+            <div className="pt-4 border-t border-border mt-4">
+               <Label className="text-muted-foreground">Booking Window:</Label>
+               <div className="flex items-center justify-between mt-1">
+                 <p className="text-sm font-medium">{inlineData.booking_window_days} Days</p>
+                 {inlineData.pending_booking_window_days && (
+                   <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/30 p-2 rounded-md">
+                     <span className="text-xs text-yellow-600">
+                       Requested: <strong>{inlineData.pending_booking_window_days} Days</strong>
+                     </span>
+                     <div className="flex gap-1">
+                       <Button size="sm" variant="default" className="h-6 text-xs bg-green-600 hover:bg-green-700" onClick={handleApproveWindow}>
+                         Approve
+                       </Button>
+                       <Button size="sm" variant="destructive" className="h-6 text-xs" onClick={handleRejectWindow}>
+                         Reject
+                       </Button>
+                     </div>
+                   </div>
+                 )}
+               </div>
+            </div>
+
+             {/* --- Settings Toggles & Windows --- */}
+            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-border">
+               <div className="flex flex-col space-y-2">
+                 <div className="flex flex-col space-y-1">
+                   <Label className="text-muted-foreground">Rescheduling</Label>
+                   {isEditingDetails ? (
+                     <div className="flex items-center space-x-2">
+                       <Checkbox 
+                         id="allow_rescheduling" 
+                         checked={inlineData.allow_rescheduling}
+                         onCheckedChange={(checked) => setInlineData(p => ({...p, allow_rescheduling: checked as boolean}))}
+                       />
+                       <label htmlFor="allow_rescheduling" className="text-sm">Allow Users to Reschedule</label>
+                     </div>
+                   ) : (
+                     <div className="flex items-center gap-2">
+                       {inlineData.allow_rescheduling 
+                         ? <Badge variant="outline" className="text-green-600 border-green-600">Allowed</Badge>
+                         : <Badge variant="outline" className="text-red-500 border-red-500">Not Allowed</Badge>
+                       }
+                     </div>
+                   )}
+                 </div>
+                 <div className="flex flex-col space-y-1">
+                    <Label className="text-muted-foreground">Reschedule Window (Days)</Label>
+                    <EditableField label="" value={inlineData.reschedule_window_days} isEditing={isEditingDetails} type="number" onChange={(v) => setInlineData(p => ({...p, reschedule_window_days: parseInt(v)}))} />
+                 </div>
+               </div>
+
+               <div className="flex flex-col space-y-2">
+                 <div className="flex flex-col space-y-1">
+                   <Label className="text-muted-foreground">Cancellation & Refunds</Label>
+                   {isEditingDetails ? (
+                     <div className="flex items-center space-x-2">
+                       <Checkbox 
+                         id="allow_refunds" 
+                         checked={inlineData.allow_refunds}
+                         onCheckedChange={(checked) => setInlineData(p => ({...p, allow_refunds: checked as boolean}))}
+                       />
+                       <label htmlFor="allow_refunds" className="text-sm">Allow Refunds</label>
+                     </div>
+                   ) : (
+                     <div className="flex items-center gap-2">
+                       {inlineData.allow_refunds 
+                         ? <Badge variant="outline" className="text-green-600 border-green-600">Refunds Active</Badge>
+                         : <Badge variant="outline" className="text-orange-500 border-orange-500">No Refunds</Badge>
+                       }
+                     </div>
+                   )}
+                 </div>
+                 <div className="flex flex-col space-y-1">
+                    <Label className="text-muted-foreground">Booking Window (Days)</Label>
+                    <EditableField label="" value={inlineData.booking_window_days} isEditing={isEditingDetails} type="number" onChange={(v) => setInlineData(p => ({...p, booking_window_days: parseInt(v)}))} />
+                 </div>
+               </div>
+            </div>
+            {/* --- END SETTINGS --- */}
           </div>
         </CardContent>
       </Card>
 
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* === UPDATED Left Column === */}
+        {/* Left Column: Calendar */}
         <div className="lg:col-span-1 space-y-6">
           <Card className="bg-card border-border rounded-3xl">
             <CardHeader><CardTitle>Select Date</CardTitle></CardHeader>
@@ -889,7 +991,6 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
                 }}
                 className="rounded-md"
               />
-
               {isPriceEditing && (
                 <div className="mt-4 pt-4 border-t space-y-2">
                   <Label htmlFor="day-price" className="font-semibold text-base">
@@ -906,19 +1007,13 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
                       value={dayPrice}
                       onChange={(e) => setDayPrice(e.target.value)}
                     />
-                    <Button 
-                      onClick={handleSetDayPrice} 
-                      disabled={!dayPrice}
-                    >
-                      Set
-                    </Button>
+                    <Button onClick={handleSetDayPrice} disabled={!dayPrice}>Set</Button>
                   </div>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
-        {/* === END UPDATED Left Column === */}
 
         {/* Right Column: Availability & Pricing */}
         <div className="lg:col-span-2 space-y-6">
@@ -978,7 +1073,6 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
                           delete ruleCopy.turf_id;
                           delete ruleCopy.created_at;
                           delete ruleCopy.sport;
-
                           return (
                             <SelectItem key={rule.id} value={rule.id} className="whitespace-pre-wrap text-xs">
                               {JSON.stringify(ruleCopy, null, 2)}
@@ -1040,7 +1134,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
                               onChange={e => setPeriodPrices(p => ({ ...p, [period]: e.target.value }))}
                               className="h-8 w-24"
                             />
-                            <Button size="sm" className="h-8" onClick={() => handleSavePeriodPrice(period as 'day' | 'evening')}>Set</Button>
+                            <Button size="sm" className="h-8" onClick={() => handleSetPeriodPrice(period as 'day' | 'evening')}>Set</Button>
                           </div>
                         )}
                       </div>
@@ -1105,7 +1199,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
                                       booking.status === 'confirmed' ? 'bg-green-600 hover:bg-green-600/90 text-white' :
                                       booking.status === 'pending' ? 'bg-yellow-500 hover:bg-yellow-500/90 text-black' :
                                       booking.status === 'completed' ? 'bg-blue-600 hover:bg-blue-600/90 text-white' :
-                                      booking.status === 'cancelled' ? 'bg-red-600 hover:bg-red-600/9OS text-white' : '')}>
+                                      booking.status === 'cancelled' ? 'bg-red-600 hover:bg-red-600/90 text-white' : '')}>
                                       {booking.status}
                                     </Badge>
                                     <Badge className={cn("capitalize text-xs",
@@ -1133,7 +1227,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
       
       {/* --- DIALOGS --- */}
 
-      {/* 1. Old Pricing Rule Dialog (for "Add New" button) */}
+      {/* 1. Old Pricing Rule Dialog */}
       <Dialog open={showRuleDialog} onOpenChange={() => setShowRuleDialog(false)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Add Pricing Rule for {sport}</DialogTitle></DialogHeader>
@@ -1278,7 +1372,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
         </DialogContent>
       </Dialog>
 
-      {/* 5. NEW: Conflict Dialog */}
+      {/* 5. Conflict Dialog */}
       <Dialog open={showConflictDialog} onOpenChange={setShowConflictDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1298,6 +1392,26 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
             <Button variant="ghost" onClick={resetPriceDialogs}>Cancel</Button>
             <Button onClick={handleOverrideRule}>Override</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 6. NEW: Apply Period Price Dialog */}
+      <Dialog open={showPeriodPriceDialog} onOpenChange={setShowPeriodPriceDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>How do you want to apply this price?</DialogTitle>
+            <DialogDescription>
+              Set all **{currentPriceChange?.period}** slots to **₹{currentPriceChange?.price}**?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col space-y-3 pt-4">
+            <Button onClick={() => handleSavePeriodPriceRule('date_only')}>
+              Apply for {format(selectedDate, "PPP")} **Only**
+            </Button>
+            <Button variant="outline" onClick={() => handleSavePeriodPriceRule('every_day')}>
+              Apply for this time **Every Day**
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
