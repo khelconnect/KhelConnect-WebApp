@@ -2,14 +2,13 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import Link from "next/link" // Import Link
+import Link from "next/link"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Loader2 } from "lucide-react"
-// 🚨 REMOVED: import { supabase } from "@/lib/supabaseClient"
-// 🚨 REMOVED: import bcrypt from "bcryptjs" 
+import { supabase } from "@/lib/supabaseClient" // Use Client Component directly
 
 export default function OwnerLoginPage() {
   const router = useRouter()
@@ -18,37 +17,44 @@ export default function OwnerLoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
 
-  /**
-   * 🔒 SECURE LOGIN HANDLER
-   * This function now sends the email/password to a server-side
-   * API route instead of pulling the password hash to the client.
-   */
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError("")
 
     try {
-      const response = await fetch("/api/owner/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+      // 1. Supabase Auth Login
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       })
 
-      const data = await response.json()
+      if (authError) throw authError
 
-      if (!response.ok) {
-        throw new Error(data.error || "Login failed")
+      // 2. Check Role
+      if (data.user) {
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", data.user.id)
+          .single()
+
+        if (profileError || !profile) throw new Error("Profile not found.")
+        
+        if (profile.role !== 'owner' && profile.role !== 'admin') {
+           await supabase.auth.signOut(); // Logout unauthorized user
+           throw new Error("Access denied. Not an owner account.");
+        }
+
+        // 3. Redirect
+        // Store ID in local storage for legacy compatibility if needed, 
+        // but try to move to using 'useUser' or session context in future.
+        localStorage.setItem("owner_id", data.user.id) 
+        router.push("/owner/dashboard")
       }
-
-      // Store session
-      localStorage.setItem("owner_id", data.id)
-
-      // Redirect to owner dashboard
-      router.push("/owner/dashboard")
       
     } catch (err: any) {
-      setError(err.message)
+      setError(err.message || "Login failed")
     } finally {
       setIsLoading(false)
     }
@@ -67,7 +73,6 @@ export default function OwnerLoginPage() {
               <Label htmlFor="email">Email Address</Label>
               <Input
                 id="email"
-                name="email"
                 type="email"
                 placeholder="john@example.com"
                 value={email}
@@ -79,7 +84,6 @@ export default function OwnerLoginPage() {
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
-                name="password"
                 type="password"
                 placeholder="••••••••"
                 value={password}
@@ -105,7 +109,6 @@ export default function OwnerLoginPage() {
             </Button>
           </form>
 
-          {/* === ADDED SECTION === */}
           <div className="mt-4 text-center text-sm">
             New?{" "}
             <Link 
@@ -115,7 +118,6 @@ export default function OwnerLoginPage() {
               Sign up
             </Link>
           </div>
-          {/* === END ADDED SECTION === */}
           
         </CardContent>
       </Card>

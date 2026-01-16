@@ -1,13 +1,29 @@
 "use client"
-import { useRef } from "react"
+import { useRef, useState, useEffect } from "react"
 import Link from "next/link"
-import { ArrowRight, Calendar, Clock, MapPin, ChevronRight, ChevronLeft } from "lucide-react"
+import { ArrowRight, Calendar, Clock, MapPin, ChevronRight, ChevronLeft, User, Building2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 
 export default function Home() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+
+  useEffect(() => {
+    // Show popup after 3 seconds
+    const timer = setTimeout(() => {
+      setShowAuthModal(true)
+    }, 3000)
+
+    return () => clearTimeout(timer)
+  }, [])
 
   const scrollRight = () => {
     if (scrollContainerRef.current) {
@@ -108,10 +124,6 @@ export default function Home() {
           <h1 className="text-4xl md:text-5xl font-bold mb-4">Book Your Turf <br /> Unleash Your Game</h1>
           <p className="text-xl text-muted-foreground">Book your favorite sports venue in Kolkata</p>
         </div>
-        {/* <h1 className="text-5xl mb-6 bg-clip-text text-transparent bg-gradient-to-r from-primary to-mint-light font-qualyneue">
-          <span className="font-bold">Khel</span>
-          <span className="font-light">Connect</span>
-        </h1> */}
       </section>
 
       <section className="mb-20">
@@ -139,7 +151,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Horizontal scrollable cards */}
         <div className="relative -mx-6 px-6">
           <div
             ref={scrollContainerRef}
@@ -195,6 +206,46 @@ export default function Home() {
           </div>
         </Card>
       </section>
+
+      {/* Auth Popup */}
+      <Dialog open={showAuthModal} onOpenChange={setShowAuthModal}>
+        <DialogContent className="sm:max-w-md bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-center">Welcome to KhelConnect!</DialogTitle>
+            <DialogDescription className="text-center">
+              Please choose how you want to continue
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Button asChild className="w-full py-6 text-lg rounded-xl" variant="default">
+              {/* UPDATED: Points to new Login page */}
+              <Link href="/login">
+                <User className="mr-2 h-5 w-5" />
+                Player Login / Check Bookings
+              </Link>
+            </Button>
+            
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">Or</span>
+              </div>
+            </div>
+
+            <Button asChild className="w-full py-6 text-lg rounded-xl" variant="outline">
+              <Link href="/owner/login">
+                <Building2 className="mr-2 h-5 w-5" />
+                Turf Partner Login
+              </Link>
+            </Button>
+            <div className="text-center text-sm text-muted-foreground">
+               New Partner? <Link href="/owner/signup" className="text-primary hover:underline">Register your turf here</Link>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }
