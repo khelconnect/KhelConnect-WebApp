@@ -1,78 +1,63 @@
-// app/admin/owners.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
-import { format } from "date-fns";
+import { Loader2, PlusCircle, CheckCircle, Search } from "lucide-react";
 
-// Type definition for an owner and their linked turf
+// Updated Type based on 'users' table
 type OwnerWithTurf = {
   id: string;
   name: string;
   email: string;
   phone: string;
-  turf_name: string; // The *requested* turf name from signup
-  location: string; // The *requested* location
   created_at: string;
-  turfs: { id: string }[]; // An array of their turfs. If length > 0, they are verified.
+  // Join result
+  turfs: { id: string; name: string; location: string }[]; 
 };
 
-// State for the verification form
 const initialTurfData = {
-  name: "",
-  location: "",
-  image: "",
-  base_price: "",
-  amenities: "",
-  sports: "",
-  default_sport: "football",
-  default_price: "",
+  name: "", location: "", image: "", base_price: "", amenities: "",
+  sports: "", default_sport: "football", default_price: "",
 };
 
 export default function OwnersTab() {
   const [owners, setOwners] = useState<OwnerWithTurf[]>([]);
+  const [filteredOwners, setFilteredOwners] = useState<OwnerWithTurf[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Modal state
   const [selectedOwner, setSelectedOwner] = useState<OwnerWithTurf | null>(null);
   const [turfData, setTurfData] = useState(initialTurfData);
 
-  // Fetch owners and their verification status (by checking for a linked turf)
   const fetchOwners = async () => {
     setIsLoading(true);
+    // 1. Fetch Users who are 'owner'
+    // 2. Left Join 'turfs' to see if they have one created
     const { data, error } = await supabase
-      .from("turf_owners")
-      .select("*, turfs(id)") // Select owner and the ID of their linked turf
+      .from("users")
+      .select("*, turfs(id, name, location)")
+      .eq("role", "owner")
       .order("created_at", { ascending: false });
 
-    if (!error && data) {
-      setOwners(data as OwnerWithTurf[]);
-    } else {
-      console.error("Error fetching owners:", error);
-    }
+// Inside fetchOwners function:
+if (!error && data) {
+  setOwners(data as OwnerWithTurf[]);
+  setFilteredOwners(data as OwnerWithTurf[]);
+} else {
+  // FIXED: Log the actual message, not just the object
+  console.error("Error fetching owners:", error?.message || error);
+}
     setIsLoading(false);
   };
 
@@ -80,16 +65,14 @@ export default function OwnersTab() {
     fetchOwners();
   }, []);
 
-  // Pre-fill the form when an owner is selected
   useEffect(() => {
-    if (selectedOwner) {
-      setTurfData({
-        ...initialTurfData,
-        name: selectedOwner.turf_name,
-        location: selectedOwner.location,
-      });
-    }
-  }, [selectedOwner]);
+    const lower = searchQuery.toLowerCase();
+    setFilteredOwners(owners.filter(o => 
+      o.name?.toLowerCase().includes(lower) || 
+      o.email?.toLowerCase().includes(lower) ||
+      o.phone?.includes(lower)
+    ));
+  }, [searchQuery, owners]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -102,36 +85,41 @@ export default function OwnersTab() {
 
     setIsSubmitting(true);
     try {
-      // This RPC function (you must create it - see SQL below)
-      // will create the turf and the initial price in a single transaction.
-      const { data, error } = await supabase.rpc(
-        "verify_owner_and_create_turf",
-        {
-          p_owner_id: selectedOwner.id,
-          p_turf_name: turfData.name,
-          p_turf_location: turfData.location,
-          p_turf_image: turfData.image,
-          p_base_price: parseInt(turfData.base_price, 10),
-          p_amenities: turfData.amenities.split(",").map((s) => s.trim()),
-          p_sports: turfData.sports.split(",").map((s) => s.trim()),
-          p_default_sport: turfData.default_sport,
-          p_default_price: parseFloat(turfData.default_price),
-        }
-      );
+      // Create Turf Logic
+      // 1. Insert into turfs table
+      const { data: turf, error: turfError } = await supabase.from('turfs').insert({
+        owner_id: selectedOwner.id, // Link to the user
+        name: turfData.name,
+        location: turfData.location,
+        image: turfData.image,
+        price: parseInt(turfData.base_price, 10),
+        amenities: turfData.amenities.split(",").map((s) => s.trim()),
+        sports: turfData.sports.split(",").map((s) => s.trim()),
+        booking_window_days: 30,
+        reschedule_window_days: 30,
+        allow_rescheduling: true,
+        allow_refunds: true
+      }).select().single();
 
-      if (error) throw error;
+      if (turfError) throw turfError;
 
-      alert("Owner verified and turf created successfully!");
-      // Update the owner in the local state to show "Verified"
-      setOwners(
-        owners.map((o) =>
-          o.id === selectedOwner.id ? { ...o, turfs: [{ id: data }] } : o
-        )
-      );
-      setSelectedOwner(null); // Close modal
+      // 2. Insert Initial Price Rule
+      const { error: priceError } = await supabase.from('turf_prices').insert({
+        turf_id: turf.id,
+        sport: turfData.default_sport,
+        price: parseFloat(turfData.default_price),
+        priority: 1
+      });
+
+      if (priceError) throw priceError;
+
+      alert("Turf created successfully!");
+      fetchOwners(); // Refresh list
+      setSelectedOwner(null);
+      setTurfData(initialTurfData);
     } catch (error: any) {
       console.error("Verification error:", error);
-      alert("Error verifying owner: " + error.message);
+      alert("Error creating turf: " + error.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -139,189 +127,116 @@ export default function OwnersTab() {
 
   return (
     <Card className="bg-card border-border">
-      <CardHeader>
-        <CardTitle>Turf Owner Management</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Turf Partner Management</CardTitle>
+        <div className="relative w-64">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Search owners..." 
+            className="pl-8" 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="flex justify-center py-10">
-            <Loader2 className="h-8 w-8 animate-spin" />
-          </div>
+          <div className="flex justify-center py-10"><Loader2 className="h-8 w-8 animate-spin" /></div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Owner Name</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Requested Turf</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {owners.map((owner) => {
-                const isVerified = owner.turfs.length > 0;
-                return (
-                  <TableRow key={owner.id}>
-                    <TableCell>
-                      <div className="font-medium">{owner.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {owner.email}
-                      </div>
-                    </TableCell>
-                    <TableCell>{owner.phone}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">{owner.turf_name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {owner.location}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {isVerified ? (
-                        <Badge variant="default" className="bg-green-600">
-                          Verified
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">Pending</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={isVerified}
-                        onClick={() => setSelectedOwner(owner)}
-                      >
-                        {isVerified ? "Manage" : "Verify"}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          <div className="border rounded-lg overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Owner Details</TableHead>
+                  <TableHead>Linked Turf</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredOwners.map((owner) => {
+                  const hasTurf = owner.turfs && owner.turfs.length > 0;
+                  const turfName = hasTurf ? owner.turfs[0].name : "None";
+                  
+                  return (
+                    <TableRow key={owner.id}>
+                      <TableCell>
+                        <div className="font-medium">{owner.name || "Unnamed"}</div>
+                        <div className="text-sm text-muted-foreground">{owner.email}</div>
+                        <div className="text-xs text-muted-foreground">{owner.phone}</div>
+                      </TableCell>
+                      <TableCell>{turfName}</TableCell>
+                      <TableCell>
+                        {hasTurf ? 
+                          <Badge className="bg-green-600"><CheckCircle className="w-3 h-3 mr-1"/> Active</Badge> : 
+                          <Badge variant="secondary">Pending Setup</Badge>
+                        }
+                      </TableCell>
+                      <TableCell>
+                        {!hasTurf ? (
+                          <Button size="sm" onClick={() => setSelectedOwner(owner)}>
+                            <PlusCircle className="w-4 h-4 mr-1" /> Create Turf
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="outline" disabled>Configured</Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </CardContent>
 
-      {/* Verification Modal */}
-      <Dialog
-        open={!!selectedOwner}
-        onOpenChange={(isOpen) => !isOpen && setSelectedOwner(null)}
-      >
-        <DialogContent className="sm:max-w-2xl bg-card border-border">
+      <Dialog open={!!selectedOwner} onOpenChange={(isOpen) => !isOpen && setSelectedOwner(null)}>
+        <DialogContent className="sm:max-w-2xl bg-card border-border max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Verify Owner & Create Turf</DialogTitle>
-            <DialogDescription>
-              Confirm details for{" "}
-              <span className="font-medium text-primary">
-                {selectedOwner?.name}
-              </span>{" "}
-              and create their turf listing.
-            </DialogDescription>
+            <DialogTitle>Setup Turf for {selectedOwner?.name}</DialogTitle>
+            <DialogDescription>Enter initial details to verify this partner.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-              {/* turfs Table Fields */}
+          <form onSubmit={handleSubmit} className="space-y-4 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Turf Name</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  value={turfData.name}
-                  onChange={handleInputChange}
-                />
+                <Label>Turf Name</Label>
+                <Input name="name" value={turfData.name} onChange={handleInputChange} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="location">Location</Label>
-                <Input
-                  id="location"
-                  name="location"
-                  value={turfData.location}
-                  onChange={handleInputChange}
-                />
+                <Label>Location</Label>
+                <Input name="location" value={turfData.location} onChange={handleInputChange} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="image">Image URL</Label>
-                <Input
-                  id="image"
-                  name="image"
-                  placeholder="https://example.com/image.png"
-                  value={turfData.image}
-                  onChange={handleInputChange}
-                />
+                <Label>Image URL</Label>
+                <Input name="image" value={turfData.image} onChange={handleInputChange} placeholder="https://..." />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="base_price">Base Price (₹)</Label>
-                <Input
-                  id="base_price"
-                  name="base_price"
-                  type="number"
-                  placeholder="e.g., 800 (for 'Starting at' price)"
-                  value={turfData.base_price}
-                  onChange={handleInputChange}
-                />
+                <Label>Base Price (₹)</Label>
+                <Input name="base_price" type="number" value={turfData.base_price} onChange={handleInputChange} required />
               </div>
-              <div className="col-span-1 md:col-span-2 space-y-2">
-                <Label htmlFor="amenities">Amenities</Label>
-                <Input
-                  id="amenities"
-                  name="amenities"
-                  placeholder="e.g., Wifi, Parking, Washroom (comma-separated)"
-                  value={turfData.amenities}
-                  onChange={handleInputChange}
-                />
+              <div className="col-span-2 space-y-2">
+                <Label>Amenities (comma separated)</Label>
+                <Input name="amenities" value={turfData.amenities} onChange={handleInputChange} placeholder="Wifi, Parking..." />
               </div>
-              <div className="col-span-1 md:col-span-2 space-y-2">
-                <Label htmlFor="sports">Available Sports</Label>
-                <Input
-                  id="sports"
-                  name="sports"
-                  placeholder="e.g., Football, Cricket (comma-separated)"
-                  value={turfData.sports}
-                  onChange={handleInputChange}
-                />
+              <div className="col-span-2 space-y-2">
+                <Label>Sports (comma separated)</Label>
+                <Input name="sports" value={turfData.sports} onChange={handleInputChange} placeholder="Football, Cricket..." />
               </div>
-
-              {/* turf_prices Table Fields (Simple) */}
-              <div className="col-span-1 md:col-span-2 pt-4 border-t border-border">
-                <h4 className="font-medium mb-2">Initial Pricing Rule</h4>
+              
+              <div className="col-span-2 pt-2 border-t"><Label className="text-primary">Initial Pricing Rule</Label></div>
+              <div className="space-y-2">
+                <Label>Default Sport</Label>
+                <Input name="default_sport" value={turfData.default_sport} onChange={handleInputChange} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="default_sport">Default Sport</Label>
-                <Input
-                  id="default_sport"
-                  name="default_sport"
-                  placeholder="e.g., football"
-                  value={turfData.default_sport}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="default_price">Price for Default Sport (₹)</Label>
-                <Input
-                  id="default_price"
-                  name="default_price"
-                  type="number"
-                  placeholder="e.g., 1000"
-                  value={turfData.default_price}
-                  onChange={handleInputChange}
-                />
+                <Label>Price (₹)</Label>
+                <Input name="default_price" type="number" value={turfData.default_price} onChange={handleInputChange} required />
               </div>
             </div>
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setSelectedOwner(null)}
-              >
-                Cancel
-              </Button>
+              <Button type="button" variant="ghost" onClick={() => setSelectedOwner(null)}>Cancel</Button>
               <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  "Verify & Create Turf"
-                )}
+                {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : "Create Turf"}
               </Button>
             </DialogFooter>
           </form>

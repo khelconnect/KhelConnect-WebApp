@@ -1,47 +1,48 @@
-// app/admin/dashboard.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Card, CardContent } from "@/components/ui/card";
-import { BarChart2, CalendarDays, CreditCard, Users } from "lucide-react";
-import { format, isToday, isThisWeek, isThisMonth, parseISO } from "date-fns";
+import { BarChart2, CalendarDays, CreditCard, Users, Loader2 } from "lucide-react";
 
 export default function DashboardTab() {
-  const [bookings, setBookings] = useState<any[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    total_revenue: 0,
+    today_revenue: 0,
+    today_bookings: 0,
+    week_bookings: 0,
+    month_bookings: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = async () => {
-      const { data: bookingsData } = await supabase.from("bookings").select("*, user_id");
-      const { data: paymentsData } = await supabase.from("payments").select("*");
-      setBookings(bookingsData || []);
-      setPayments(paymentsData || []);
+    const fetchStats = async () => {
+      try {
+        const { data, error } = await supabase.rpc("get_admin_dashboard_stats");
+        if (error) throw error;
+        setStats(data);
+      } catch (error) {
+        console.error("Error fetching stats:", error);
+      } finally {
+        setLoading(false);
+      }
     };
-    fetchData();
+    fetchStats();
   }, []);
 
-  const todayBookings = bookings.filter((b) => isToday(parseISO(b.created_at)));
-  const weekBookings = bookings.filter((b) => isThisWeek(parseISO(b.created_at)));
-  const monthBookings = bookings.filter((b) => isThisMonth(parseISO(b.created_at)));
-
-  const totalRevenue = payments
-    .filter((p) => p.status === "confirmed")
-    .reduce((acc, curr) => acc + curr.amount, 0);
-
-  const todayRevenue = payments
-    .filter((p) => p.status === "confirmed" && isToday(parseISO(p.created_at)))
-    .reduce((acc, curr) => acc + curr.amount, 0);
+  if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin" /></div>;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       <Card className="bg-card border-border rounded-xl">
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <CalendarDays className="h-8 w-8 text-primary" />
+            <div className="bg-primary/10 p-3 rounded-full">
+              <CalendarDays className="h-8 w-8 text-primary" />
+            </div>
             <div>
               <p className="text-sm text-muted-foreground">Bookings Today</p>
-              <p className="text-2xl font-bold">{todayBookings.length}</p>
+              <p className="text-2xl font-bold">{stats.today_bookings}</p>
             </div>
           </div>
         </CardContent>
@@ -50,10 +51,12 @@ export default function DashboardTab() {
       <Card className="bg-card border-border rounded-xl">
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <BarChart2 className="h-8 w-8 text-primary" />
+            <div className="bg-blue-500/10 p-3 rounded-full">
+              <BarChart2 className="h-8 w-8 text-blue-600" />
+            </div>
             <div>
               <p className="text-sm text-muted-foreground">This Week</p>
-              <p className="text-2xl font-bold">{weekBookings.length} bookings</p>
+              <p className="text-2xl font-bold">{stats.week_bookings} bookings</p>
             </div>
           </div>
         </CardContent>
@@ -62,10 +65,12 @@ export default function DashboardTab() {
       <Card className="bg-card border-border rounded-xl">
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <CreditCard className="h-8 w-8 text-primary" />
+            <div className="bg-green-500/10 p-3 rounded-full">
+              <CreditCard className="h-8 w-8 text-green-600" />
+            </div>
             <div>
               <p className="text-sm text-muted-foreground">Revenue Today</p>
-              <p className="text-2xl font-bold">₹{todayRevenue}</p>
+              <p className="text-2xl font-bold">₹{stats.today_revenue}</p>
             </div>
           </div>
         </CardContent>
@@ -74,22 +79,26 @@ export default function DashboardTab() {
       <Card className="bg-card border-border rounded-xl">
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <Users className="h-8 w-8 text-primary" />
+            <div className="bg-purple-500/10 p-3 rounded-full">
+              <Users className="h-8 w-8 text-purple-600" />
+            </div>
             <div>
               <p className="text-sm text-muted-foreground">Monthly Bookings</p>
-              <p className="text-2xl font-bold">{monthBookings.length}</p>
+              <p className="text-2xl font-bold">{stats.month_bookings}</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="bg-card border-border rounded-xl">
+      <Card className="bg-card border-border rounded-xl sm:col-span-2 lg:col-span-2">
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
-            <CreditCard className="h-8 w-8 text-primary" />
+            <div className="bg-orange-500/10 p-3 rounded-full">
+              <CreditCard className="h-8 w-8 text-orange-600" />
+            </div>
             <div>
-              <p className="text-sm text-muted-foreground">Total Revenue</p>
-              <p className="text-2xl font-bold">₹{totalRevenue}</p>
+              <p className="text-sm text-muted-foreground">Total Lifetime Revenue</p>
+              <p className="text-3xl font-bold">₹{stats.total_revenue}</p>
             </div>
           </div>
         </CardContent>

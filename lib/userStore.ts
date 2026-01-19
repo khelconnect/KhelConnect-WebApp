@@ -2,19 +2,24 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 interface UserState {
-  // Change 'string' to 'string | null' to fix the error
-  name: string | null;
-  setName: (name: string | null) => void;
+  name: string | null
+  role: string | null // <--- Added Role
+  setName: (name: string | null) => void
+  setRole: (role: string | null) => void // <--- Added Setter
+  clearUser: () => void
 }
 
 export const useUserStore = create<UserState>()(
   persist(
     (set) => ({
-      name: null, // Initial state is null
-      setName: (name) => set({ name: name }),
+      name: null,
+      role: null, // Default
+      setName: (name) => set({ name }),
+      setRole: (role) => set({ role }),
+      clearUser: () => set({ name: null, role: null }),
     }),
     {
-      name: 'khelconnect-storage', // unique name for localStorage
+      name: 'khelconnect-user-storage',
     }
   )
 )

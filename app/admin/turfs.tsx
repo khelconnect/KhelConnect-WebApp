@@ -95,15 +95,16 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
 
   useEffect(() => {
     async function fetchOwners() {
-      const { data } = await supabase.from('turf_owners').select('id, name');
+      // FIXED: Fetch from 'users' table where role is 'owner'
+      const { data } = await supabase
+        .from('users')
+        .select('id, name')
+        .eq('role', 'owner');
+        
       setOwners(data || []);
     }
     fetchOwners();
   }, []);
-
-  const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
 
   const handleCheckboxChange = (sport: string) => {
     setFormData((prev) => {
