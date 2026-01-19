@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription
@@ -10,16 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
 import {
-  Plus, Edit, ArrowLeft, MapPin, Star, Clock, XCircle, CheckCircle, RefreshCw, Trash2, Settings, ToggleLeft, ToggleRight, Info, AlertCircle
+  Plus, Edit, ArrowLeft, MapPin, Star, Clock, XCircle, CheckCircle, RefreshCw, Trash2, Settings, ToggleLeft, ToggleRight, Info, AlertCircle, Lock
 } from "lucide-react";
 import { format, getDay } from "date-fns";
 import { cn } from "@/lib/utils";
-import { DayContent, DayContentProps } from "react-day-picker";
 
 // --- TYPES ---
 const sportsOptions = [
@@ -43,13 +42,14 @@ interface Turf {
   allow_rescheduling: boolean;
   allow_refunds: boolean;
   reschedule_window_days: number;
+  is_coming_soon: boolean; // Added
 }
 
 type TimeSlotDisplay = {
   id: string;
   time: string;
   endTime: string;
-  period: string; // 'day' or 'evening'
+  period: string; 
 }
 
 type BookingType = {
@@ -90,21 +90,27 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
   const [formData, setFormData] = useState({
     name: '', location: '', price: '', amenities: '',
     distance: '', image: '', rating: '', sports: [] as string[], turf_owner_id: '',
+    is_coming_soon: false, // Added
   });
   const [owners, setOwners] = useState<any[]>([]);
 
   useEffect(() => {
     async function fetchOwners() {
-      // FIXED: Fetch from 'users' table where role is 'owner'
       const { data } = await supabase
         .from('users')
         .select('id, name')
         .eq('role', 'owner');
-        
       setOwners(data || []);
     }
     fetchOwners();
   }, []);
+
+  const handleInputChange = (key: string, value: any) => {
+    setFormData((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
 
   const handleCheckboxChange = (sport: string) => {
     setFormData((prev) => {
@@ -117,9 +123,14 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
   };
 
   const addTurf = async () => {
+    if (!formData.name || !formData.price) {
+      alert("Please fill in the Turf Name and Price.");
+      return;
+    }
+
     const payload = {
       ...formData,
-      price: parseInt(formData.price),
+      price: parseInt(formData.price) || 0,
       rating: parseFloat(formData.rating) || null,
       amenities: formData.amenities.split(',').map((a) => a.trim()).filter(Boolean),
       sports: formData.sports,
@@ -127,7 +138,8 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
       allow_rescheduling: true,
       allow_refunds: true,
       booking_window_days: 30,
-      reschedule_window_days: 30
+      reschedule_window_days: 30,
+      is_coming_soon: formData.is_coming_soon // Added
     };
     try {
       const { error } = await supabase.from('turfs').insert([payload]);
@@ -135,6 +147,7 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
       setFormData({
         name: '', location: '', price: '', amenities: '',
         distance: '', image: '', rating: '', sports: [], turf_owner_id: '',
+        is_coming_soon: false,
       });
       onTurfAdded();
     } catch (error: any) {
@@ -149,31 +162,49 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
         <DialogHeader><DialogTitle>Add New Turf</DialogTitle></DialogHeader>
         <ScrollArea className="max-h-[70vh]">
           <div className="space-y-4 p-4">
-            <Label>Turf Owner</Label>
-            <Select
-              value={formData.turf_owner_id}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, turf_owner_id: value }))}
-            >
-              <SelectTrigger><SelectValue placeholder="Select Owner" /></SelectTrigger>
-              <SelectContent>
-                {owners.map((owner) => (
-                  <SelectItem key={owner.id} value={owner.id}>{owner.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* COMING SOON TOGGLE */}
+            <div className="flex items-center space-x-2 p-3 rounded-xl border border-orange-500/20 bg-orange-500/5">
+              <Checkbox 
+                id="add-is-coming-soon" 
+                checked={formData.is_coming_soon}
+                onCheckedChange={(checked) => handleInputChange('is_coming_soon', checked as boolean)}
+              />
+              <div className="grid gap-1.5 leading-none">
+                <label htmlFor="add-is-coming-soon" className="text-sm font-bold leading-none text-orange-600 flex items-center gap-2">
+                  <Lock className="h-3 w-3" /> Coming Soon Mode
+                </label>
+                <p className="text-xs text-muted-foreground">This turf will appear blurred on the user site.</p>
+              </div>
+            </div>
 
-            {Object.keys(formData).filter(k => k !== 'sports' && k !== 'turf_owner_id').map((key) => (
-              <div key={key}>
+            <div className="space-y-2">
+              <Label>Turf Owner</Label>
+              <Select
+                value={formData.turf_owner_id}
+                onValueChange={(value) => handleInputChange('turf_owner_id', value)}
+              >
+                <SelectTrigger><SelectValue placeholder="Select Owner" /></SelectTrigger>
+                <SelectContent>
+                  {owners.map((owner) => (
+                    <SelectItem key={owner.id} value={owner.id}>{owner.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {Object.keys(formData).filter(k => k !== 'sports' && k !== 'turf_owner_id' && k !== 'is_coming_soon').map((key) => (
+              <div key={key} className="space-y-2">
                 <Label className="capitalize">{key.replace('_', ' ')}</Label>
                 <Input
                   value={(formData as any)[key]}
                   onChange={(e) => handleInputChange(key, e.target.value)}
                   type={key === 'price' || key === 'rating' ? 'number' : 'text'}
+                  placeholder={`Enter ${key.replace('_', ' ')}`}
                 />
               </div>
             ))}
             
-            <div>
+            <div className="space-y-2">
               <Label>Sports</Label>
               <div className="grid grid-cols-3 gap-2 mt-2">
                 {sportsOptions.map((sport) => (
@@ -183,7 +214,7 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
                       checked={formData.sports.includes(sport)}
                       onCheckedChange={() => handleCheckboxChange(sport)}
                     />
-                    <Label htmlFor={`add-${sport}`} className="capitalize">{sport}</Label>
+                    <Label htmlFor={`add-${sport}`} className="capitalize text-sm font-normal">{sport}</Label>
                   </div>
                 ))}
               </div>
@@ -210,8 +241,8 @@ function EditableField({ label, value, isEditing, onChange, type = "text" }: {
   type?: string
 }) {
   return (
-    <div>
-      <Label>{label}</Label>
+    <div className="space-y-1">
+      {label && <Label className="text-muted-foreground">{label}</Label>}
       {isEditing ? (
         <Input
           type={type}
@@ -220,7 +251,7 @@ function EditableField({ label, value, isEditing, onChange, type = "text" }: {
           className="mt-1"
         />
       ) : (
-        <p className="text-sm p-2 rounded-md bg-secondary">{value}</p>
+        <p className="text-sm p-2 rounded-md bg-secondary min-h-[40px] flex items-center">{value}</p>
       )}
     </div>
   )
@@ -312,6 +343,12 @@ function TurfListingGrid({ onSelectTurf }: { onSelectTurf: (turf: Turf, sport: s
                   <span className="font-medium text-base text-white">{turf.rating}</span>
                 </div>
               )}
+              {turf.is_coming_soon && (
+                <div className="absolute top-4 left-4 bg-orange-500 rounded-full px-3 py-1 flex items-center shadow-md">
+                  <Lock className="h-3 w-3 text-white mr-1" />
+                  <span className="text-[10px] font-bold text-white uppercase tracking-tight">Soon</span>
+                </div>
+              )}
             </div>
             <CardContent className="p-6">
               <div className="flex justify-between items-start mb-2">
@@ -330,11 +367,6 @@ function TurfListingGrid({ onSelectTurf }: { onSelectTurf: (turf: Turf, sport: s
                     {sport}
                   </Badge>
                 ))}
-                {turf.sports && turf.sports.length > 3 && (
-                  <Badge variant="outline" className="bg-secondary border-border text-xs px-3 py-1 rounded-full">
-                    +{turf.sports.length - 3} more
-                  </Badge>
-                )}
               </div>
             </CardContent>
           </Card>
@@ -368,6 +400,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
   
   const [isPriceEditing, setIsPriceEditing] = useState(false);
   const [inlineBasePrice, setInlineBasePrice] = useState(turf.price.toString());
+  
   const [dayPrice, setDayPrice] = useState("");
   const [periodPrices, setPeriodPrices] = useState({ day: "", evening: "" });
   const [weekdayPrice, setWeekdayPrice] = useState("");
@@ -388,508 +421,292 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
   const [showRuleDialog, setShowRuleDialog] = useState(false);
   const [ruleForm, setRuleForm] = useState<any>({ ruleType: 'slot', dayType: 'weekday', priority: '1', price: '' });
 
-  // --- Data Fetching ---
-
   const fetchAllTimeSlots = async () => {
     try {
       const { data, error } = await supabase.from("time_slots").select("*").order("start_time");
       if (error) throw error;
       const formattedSlots = (data || []).map((slot: any) => ({
-        id: slot.id,
-        time: `${slot.start_time}${slot.period ? ` ${slot.period}` : ""}`,
-        endTime: slot.end_time,
-        period: slot.period || 'day'
+        id: slot.id, time: `${slot.start_time}${slot.period ? ` ${slot.period}` : ""}`, endTime: slot.end_time, period: slot.period || 'day'
       }));
       setTimeSlots(formattedSlots);
-    } catch (error: any) {
-      console.error("Fetch slots error:", error);
-    }
+    } catch (error: any) { console.error("Fetch slots error:", error); }
   };
   
   const fetchOwners = async () => {
     try {
-      const { data, error } = await supabase.from('turf_owners').select('id, name');
+      const { data, error } = await supabase.from('users').select('id, name').eq('role', 'owner');
       if (error) throw error;
       setOwners(data || []);
-    } catch (error: any) {
-      console.error("Fetch owners error:", error);
-    }
+    } catch (error: any) { console.error("Fetch owners error:", error); }
   };
 
   const fetchBookingsForDate = useCallback(async () => {
     if (!turf || !selectedDate) return;
     setIsBookingsLoading(true);
-    
     const formattedDate = format(selectedDate, "yyyy-MM-dd");
-    
     try {
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("*, users (name)")
-        .eq("turf_id", turf.id)
-        .eq("date", formattedDate);
+      const { data, error } = await supabase.from("bookings").select("*, users (name)").eq("turf_id", turf.id).eq("date", formattedDate);
       if (error) throw error;
-
       const newBookings: BookingType[] = [];
       const newBlocks: ManualBlockType[] = [];
       data.forEach((b: any) => {
         if (Array.isArray(b.slot)) {
           b.slot.forEach((slotId: string) => {
             const timeSlot = timeSlots.find(ts => ts.id === slotId);
-            if (b.status === "blocked") {
-              newBlocks.push({ id: b.id, slotId: slotId, reason: b.sport });
-            } else {
-              newBookings.push({
-                id: b.id, date: b.date, slot: timeSlot ? timeSlot.time : "Unknown",
-                slotId: slotId, customerName: b.users?.name || "N/A",
-                status: b.status, payment_status: b.payment_status,
-              });
-            }
+            if (b.status === "blocked") { newBlocks.push({ id: b.id, slotId: slotId, reason: b.notes || b.sport }); }
+            else { newBookings.push({ id: b.id, date: b.date, slot: timeSlot ? timeSlot.time : "Unknown", slotId: slotId, customerName: b.users?.name || "N/A", status: b.status, payment_status: b.payment_status }); }
           });
         }
       });
       setBookings(newBookings);
       setManualBlocks(newBlocks);
-    } catch (error: any) {
-      console.error("Error fetching bookings:", error);
-    } finally {
-      setIsBookingsLoading(false);
-    }
+    } catch (error: any) { console.error("Error fetching bookings:", error); }
+    finally { setIsBookingsLoading(false); }
   }, [selectedDate, turf, timeSlots]);
 
   const fetchPricingRules = async (sportToFetch: string) => {
     if (!sportToFetch) { setPricingRules([]); return; }
     try {
-      const { data, error } = await supabase
-        .from('turf_prices').select('*').eq('turf_id', turf.id).eq('sport', sportToFetch)
-        .order('priority', { ascending: false });
+      const { data, error } = await supabase.from('turf_prices').select('*').eq('turf_id', turf.id).eq('sport', sportToFetch).order('priority', { ascending: false });
       if (error) throw error;
       setPricingRules(data || []);
-    } catch (error: any) {
-      console.error("Fetch rules error:", error);
-    }
+    } catch (error: any) { console.error("Fetch rules error:", error); }
   };
   
-  useEffect(() => {
-    fetchAllTimeSlots();
-    fetchOwners();
-  }, []);
-  
-  useEffect(() => {
-    if (timeSlots.length > 0) fetchBookingsForDate();
-  }, [selectedDate, timeSlots, fetchBookingsForDate]);
-
-  useEffect(() => {
-    fetchPricingRules(sport);
-  }, [sport]);
-
-  // --- Handlers ---
+  useEffect(() => { fetchAllTimeSlots(); fetchOwners(); }, []);
+  useEffect(() => { if (timeSlots.length > 0) fetchBookingsForDate(); }, [selectedDate, timeSlots, fetchBookingsForDate]);
+  useEffect(() => { fetchPricingRules(sport); }, [sport, turf.id]);
 
   const handleSaveDetails = async () => {
     const updatePayload = {
-      ...inlineData,
-      price: parseInt(inlineBasePrice as any),
+      name: inlineData.name,
+      location: inlineData.location,
+      image: inlineData.image,
+      turf_owner_id: inlineData.turf_owner_id,
+      price: parseInt(inlineBasePrice),
       rating: parseFloat(inlineData.rating as any) || null,
-      amenities: typeof inlineData.amenities === 'string'
-        ? (inlineData.amenities as string).split(',').map((a: string) => a.trim())
-        : inlineData.amenities,
+      amenities: Array.isArray(inlineData.amenities) ? inlineData.amenities : (inlineData.amenities as string).split(',').map(s => s.trim()),
       sports: inlineData.sports, 
       allow_rescheduling: inlineData.allow_rescheduling,
       allow_refunds: inlineData.allow_refunds,
       booking_window_days: parseInt(inlineData.booking_window_days as any) || 30,
       reschedule_window_days: parseInt(inlineData.reschedule_window_days as any) || 30,
+      is_coming_soon: inlineData.is_coming_soon // Added
     };
     try {
-      const { data, error } = await supabase
-        .from('turfs')
-        .update(updatePayload)
-        .eq('id', turf.id)
-        .select()
-        .single();
+      const { data, error } = await supabase.from('turfs').update(updatePayload).eq('id', turf.id).select().single();
       if (error) throw error;
       setInlineData(data); 
       setIsEditingDetails(false);
       setIsPriceEditing(false);
-    } catch (error: any) {
-      console.error('Update error:', error);
-      alert("Error saving details: " + error.message);
-    }
+      alert("Details saved successfully!");
+    } catch (error: any) { alert("Error saving details: " + error.message); }
   };
 
   const handleInlineCheckboxChange = (sport: string) => {
     setInlineData((prev) => {
       const isSelected = prev.sports.includes(sport);
-      return {
-        ...prev,
-        sports: isSelected ? prev.sports.filter((s) => s !== sport) : [...prev.sports, sport],
-      };
+      return { ...prev, sports: isSelected ? prev.sports.filter((s) => s !== sport) : [...prev.sports, sport] };
     });
   };
 
-  // --- Handlers for Booking Window Approval ---
   const handleApproveWindow = async () => {
     if (!inlineData.pending_booking_window_days) return;
-    const days = inlineData.pending_booking_window_days;
     try {
-      const { error } = await supabase
-        .from("turfs")
-        .update({
-          booking_window_days: days,
-          pending_booking_window_days: null
-        })
-        .eq("id", turf.id);
-        
+      const { error } = await supabase.from("turfs").update({ booking_window_days: inlineData.pending_booking_window_days, pending_booking_window_days: null }).eq("id", turf.id);
       if (error) throw error;
-      
-      setInlineData(prev => ({ 
-        ...prev, 
-        booking_window_days: days, 
-        pending_booking_window_days: null 
-      }));
-      alert(`Approved! Booking window set to ${days} days.`);
-    } catch (e: any) {
-      alert("Error approving: " + e.message);
-    }
+      setInlineData(prev => ({ ...prev, booking_window_days: inlineData.pending_booking_window_days as number, pending_booking_window_days: null }));
+      alert(`Approved!`);
+    } catch (e: any) { alert(e.message); }
   };
 
   const handleRejectWindow = async () => {
     try {
-      const { error } = await supabase
-        .from("turfs")
-        .update({ pending_booking_window_days: null })
-        .eq("id", turf.id);
-        
+      const { error } = await supabase.from("turfs").update({ pending_booking_window_days: null }).eq("id", turf.id);
       if (error) throw error;
       setInlineData(prev => ({ ...prev, pending_booking_window_days: null }));
-      alert("Request rejected.");
-    } catch (e: any) {
-      alert("Error rejecting: " + e.message);
-    }
+    } catch (e: any) { alert(e.message); }
   };
 
-  // --- PRICING HANDLERS ---
-  
   const findDirectConflict = async (rule: Omit<PriceRule, 'id' | 'price'>): Promise<PriceRule | null> => {
-    let query = supabase.from('turf_prices')
-      .select('*')
-      .eq('turf_id', rule.turf_id)
-      .eq('sport', rule.sport)
-      .eq('priority', rule.priority);
-      
+    let query = supabase.from('turf_prices').select('*').eq('turf_id', rule.turf_id).eq('sport', rule.sport).eq('priority', rule.priority);
     if (rule.date) query = query.eq('date', rule.date); else query = query.is('date', null);
     if (rule.day_of_week) query = query.eq('day_of_week', rule.day_of_week); else query = query.is('day_of_week', null);
     if (rule.slot_id) query = query.eq('slot_id', rule.slot_id); else query = query.is('slot_id', null);
     if (rule.period) query = query.eq('period', rule.period); else query = query.is('period', null);
     if (rule.day_type) query = query.eq('day_type', rule.day_type); else query = query.is('day_type', null);
-    
     try {
       const { data, error } = await query.maybeSingle();
       if (error) throw error;
       return data;
-    } catch (error: any) {
-      console.error("Conflict check error:", error);
-      return null;
-    }
+    } catch (error: any) { return null; }
   };
   
   const savePriceRule = async (rule: Omit<PriceRule, 'id'>) => {
-    try {
-      const conflict = await findDirectConflict(rule);
-      if (conflict) {
-        setConflictingRule(conflict);
-        setCurrentPriceChange({ ...rule, id: conflict.id });
-        setShowConflictDialog(true);
-        return;
-      }
-      const { error } = await supabase.from('turf_prices').insert(rule);
-      if (error) throw error;
-    } catch (error: any) {
-      console.error("Error saving price rule:", error);
-      alert("Error: " + error.message);
+    const conflict = await findDirectConflict(rule);
+    if (conflict) {
+      setConflictingRule(conflict);
+      setCurrentPriceChange({ ...rule, id: conflict.id });
+      setShowConflictDialog(true);
+      return;
     }
+    const { error } = await supabase.from('turf_prices').insert(rule);
+    if (error) throw error;
   };
 
   const handleOverrideRule = async () => {
     if (!conflictingRule || !currentPriceChange) return;
     try {
-      const { error } = await supabase
-        .from('turf_prices')
-        .update({ price: currentPriceChange.price })
-        .eq('id', conflictingRule.id);
+      const { error } = await supabase.from('turf_prices').update({ price: currentPriceChange.price }).eq('id', conflictingRule.id);
       if (error) throw error;
-      alert("Rule overridden successfully!");
+      alert("Rule overridden!");
       resetPriceDialogs();
       fetchPricingRules(sport);
-    } catch (error: any) {
-      console.error("Error overriding rule:", error);
-      alert("Error: " + error.message);
-    }
+    } catch (error: any) { alert(error.message); }
   };
   
   const resetPriceDialogs = () => {
-    setShowSlotPriceDialog(false);
-    setShowDayPriceDialog(false);
-    setShowApplyDialog(false);
-    setShowPeriodPriceDialog(false);
-    setShowConflictDialog(false);
-    setCurrentPriceChange(null);
-    setConflictingRule(null);
-    setSelectedSlots([]);
-    setDayPrice("");
+    setShowSlotPriceDialog(false); setShowDayPriceDialog(false); setShowApplyDialog(false);
+    setShowPeriodPriceDialog(false); setShowConflictDialog(false);
+    setCurrentPriceChange(null); setConflictingRule(null); setSelectedSlots([]); setDayPrice("");
   };
 
   const handleSlotClick = (slotId: string) => {
     if (!isPriceEditing) return;
-    if (isMultiSelect) {
-      setSelectedSlots(prev =>
-        prev.includes(slotId) ? prev.filter(id => id !== slotId) : [...prev, slotId]
-      );
-    } else {
-      setCurrentPriceChange({ type: 'slot', slots: [slotId], price: '' });
-      setShowSlotPriceDialog(true);
-    }
+    if (isMultiSelect) { setSelectedSlots(prev => prev.includes(slotId) ? prev.filter(id => id !== slotId) : [...prev, slotId]); }
+    else { setCurrentPriceChange({ type: 'slot', slots: [slotId], price: '' }); setShowSlotPriceDialog(true); }
   };
 
   const handleOpenMultiSlotDialog = () => {
-    if (selectedSlots.length === 0) { alert("Please select one or more slots first."); return; }
+    if (selectedSlots.length === 0) return;
     setCurrentPriceChange({ type: 'slot', slots: selectedSlots, price: '' });
     setShowSlotPriceDialog(true);
   };
   
   const handleSaveSlotPriceRule = async (applyType: 'date_only' | 'every_day' | 'weekday' | 'weekend') => {
-    const { type, slots, price } = currentPriceChange;
-    if (type !== 'slot' || !slots || !price) { alert("Error: Price or slots not set."); return; }
-    if (!confirm("Are you sure you want to save this price rule?")) return;
-
-    const date = selectedDate;
-    const rulesToInsert: Omit<PriceRule, 'id'>[] = [];
-
-    slots.forEach((slotId: string) => {
-      let rule: Omit<PriceRule, 'id'> = {
-        turf_id: turf.id,
-        sport: sport,
-        price: parseFloat(price),
-        slot_id: slotId,
-        priority: 0 
-      };
-
-      if (applyType === 'date_only') {
-        rule.date = format(date, "yyyy-MM-dd");
-        rule.priority = 30; // Slot + Date (Highest)
-      } else if (applyType === 'every_day') {
-        rule.priority = 20; // Slot only
-      } else if (applyType === 'weekday') {
-        rule.day_type = 'weekday';
-        rule.priority = 25; // Slot + Day Type
-      } else if (applyType === 'weekend') {
-        rule.day_type = 'weekend';
-        rule.priority = 25; // Slot + Day Type
-      }
-      rulesToInsert.push(rule);
-    });
-    
-    // Save ALL rules
-    try {
-      for (const rule of rulesToInsert) {
-        await savePriceRule(rule); 
-      }
-      alert("Price rules saved successfully!");
-      resetPriceDialogs();
-      fetchPricingRules(sport);
-    } catch (error: any) {
-      console.error("Error in batch save:", error);
-      alert("An error occurred while saving the rules. " + error.message);
-    }
+    const { slots, price } = currentPriceChange;
+    const rulesToInsert = slots.map((slotId: string) => ({
+      turf_id: turf.id, sport, price: parseFloat(price), slot_id: slotId,
+      date: applyType === 'date_only' ? format(selectedDate, "yyyy-MM-dd") : null,
+      day_type: (applyType === 'weekday' || applyType === 'weekend') ? applyType : null,
+      priority: applyType === 'date_only' ? 30 : (applyType === 'every_day' ? 20 : 25)
+    }));
+    try { for (const rule of rulesToInsert) await savePriceRule(rule); resetPriceDialogs(); fetchPricingRules(sport); }
+    catch (error: any) { alert(error.message); }
   };
   
   const handleSaveDayPriceRule = async (applyType: 'date_only' | 'every_day_of_week') => {
     const { price, date } = currentPriceChange;
-    if (!price || !date || !sport) { alert("Missing data."); return; }
-    
-    let rule: Omit<PriceRule, 'id'> = { 
-      turf_id: turf.id, sport: sport, price: parseFloat(price), priority: 0 
+    const rule = { 
+      turf_id: turf.id, sport, price: parseFloat(price),
+      date: applyType === 'date_only' ? format(date, "yyyy-MM-dd") : null,
+      day_of_week: applyType === 'every_day_of_week' ? getDay(date) : null,
+      priority: applyType === 'date_only' ? 15 : 10
     };
-
-    if (applyType === 'date_only') {
-      rule.date = format(date, "yyyy-MM-dd");
-      rule.priority = 15; // Date only
-    } else if (applyType === 'every_day_of_week') {
-      rule.day_of_week = getDay(date);
-      rule.priority = 10; // Day of week only
-    }
-    
-    if (!confirm("Are you sure you want to save this price rule?")) return;
-    await savePriceRule(rule);
-    alert("Price rule saved!");
-    resetPriceDialogs();
-    fetchPricingRules(sport);
+    try { await savePriceRule(rule); resetPriceDialogs(); fetchPricingRules(sport); } catch (e: any) { alert(e.message); }
   };
 
   const handleSetDayPrice = () => {
     if (!dayPrice) return;
-    if (!confirm(`Set price for ${format(selectedDate, "PPP")} to ₹${dayPrice}?`)) return;
-    setCurrentPriceChange({
-      type: 'day',
-      price: dayPrice,
-      date: selectedDate,
-    });
+    setCurrentPriceChange({ type: 'day', price: dayPrice, date: selectedDate });
     setShowDayPriceDialog(true);
   };
   
-  const handleSaveBulkPrice = (dayType: 'weekday' | 'weekend') => {
+  const handleSaveBulkPrice = async (dayType: 'weekday' | 'weekend') => {
     const price = dayType === 'weekday' ? weekdayPrice : weekendPrice;
-    if (!price) { alert(`Please enter a price for ${dayType}s.`); return; }
-    if (!confirm(`Set price for all ${dayType}s to ₹${price}?`)) return;
-
-    const rule: Omit<PriceRule, 'id'> = {
-      turf_id: turf.id, sport: sport, price: parseFloat(price),
-      day_type: dayType, priority: 1, 
-    };
-    savePriceRule(rule).then(() => {
-       alert("Price rule saved!");
-       fetchPricingRules(sport);
-    });
+    if (!price) return;
+    const rule = { turf_id: turf.id, sport, price: parseFloat(price), day_type: dayType, priority: 1 };
+    try { await savePriceRule(rule); fetchPricingRules(sport); } catch(e: any) { alert(e.message); }
   };
 
   const handleSetPeriodPrice = (period: 'day' | 'evening') => {
     const price = periodPrices[period];
-    if (!price) { alert(`Please enter a price for ${period} slots.`); return; }
-    if (!confirm(`Set price for ${period} slots to ₹${price}?`)) return;
-    setCurrentPriceChange({ type: 'period', price: price, period: period });
+    if (!price) return;
+    setCurrentPriceChange({ type: 'period', price, period });
     setShowPeriodPriceDialog(true);
   };
   
   const handleSavePeriodPriceRule = async (applyType: 'date_only' | 'every_day') => {
     const { price, period } = currentPriceChange;
-    if (!price || !period || !sport) { alert("Missing data."); return; }
-    
-    let rule: Omit<PriceRule, 'id'> = { 
-      turf_id: turf.id, sport: sport, price: parseFloat(price),
-      period: period, priority: 0 
+    const rule = { 
+      turf_id: turf.id, sport, price: parseFloat(price), period,
+      date: applyType === 'date_only' ? format(selectedDate, "yyyy-MM-dd") : null,
+      priority: applyType === 'date_only' ? 18 : 5
     };
-
-    if (applyType === 'date_only') {
-      rule.date = format(selectedDate, "yyyy-MM-dd");
-      rule.priority = 18; // Period on date
-    } else if (applyType === 'every_day') {
-      rule.priority = 5; // Period general
-    }
-    
-    if (!confirm("Are you sure you want to save this price rule?")) return;
-    await savePriceRule(rule);
-    alert("Price rule saved!");
-    resetPriceDialogs();
-    fetchPricingRules(sport);
+    try { await savePriceRule(rule); resetPriceDialogs(); fetchPricingRules(sport); } catch(e: any) { alert(e.message); }
   };
 
   const handleSaveOldRule = async () => {
-    const payload: Omit<PriceRule, 'id'> = {
-      turf_id: turf.id, sport: sport, price: parseFloat(ruleForm.price || '0'),
-      priority: parseInt(ruleForm.priority || '1'),
-    };
+    const payload: any = { turf_id: turf.id, sport, price: parseFloat(ruleForm.price || '0'), priority: parseInt(ruleForm.priority || '1') };
     switch (ruleForm.ruleType) {
       case 'slot': payload.slot_id = ruleForm.slotId; break;
       case 'day_of_week': payload.day_of_week = parseInt(ruleForm.dayOfWeek!); break;
       case 'date': payload.date = ruleForm.date; break;
-      case 'range': payload.start_time = ruleForm.startTime; payload.end_time = ruleForm.endTime; break;
       case 'period': payload.period = ruleForm.period; break;
     }
-    await savePriceRule(payload);
-    alert("Rule saved.");
-    fetchPricingRules(sport);
-    setShowRuleDialog(false);
+    try { await savePriceRule(payload); fetchPricingRules(sport); setShowRuleDialog(false); } catch(e: any) { alert(e.message); }
   };
 
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-4">
-        <Button variant="ghost" onClick={onBack}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to All Turfs
-        </Button>
+        <Button variant="ghost" onClick={onBack}><ArrowLeft className="mr-2 h-4 w-4" /> Back to All Turfs</Button>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setIsPriceEditing(p => !p)}>
-            {isPriceEditing ? <XCircle className="mr-2 h-4 w-4" /> : <Settings className="mr-2 h-4 w-4" />}
-            {isPriceEditing ? "Cancel Pricing" : "Edit Pricing"}
+            {isPriceEditing ? <XCircle className="mr-2 h-4 w-4" /> : <Settings className="mr-2 h-4 w-4" />} {isPriceEditing ? "Cancel Pricing" : "Edit Pricing"}
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setIsEditingDetails(p => !p)}>
-            <Edit className="h-5 w-5" />
-          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setIsEditingDetails(p => !p)}><Edit className="h-5 w-5" /></Button>
         </div>
       </div>
 
-      {/* Turf Detail Card */}
       <Card className="overflow-hidden bg-card border-border rounded-3xl mb-6">
         <CardContent className="p-0 flex flex-col md:flex-row">
           <div className="w-full md:w-1/3 aspect-video md:aspect-square relative">
             <img src={inlineData.image || "/placeholder.svg"} alt={inlineData.name} className="w-full h-full object-cover rounded-t-3xl md:rounded-l-3xl md:rounded-t-none" />
             {isEditingDetails && (
-              <div className="absolute top-2 left-2 right-2 p-2 bg-black/50 text-white rounded-md">
-                <Input value={inlineData.image || ''} onChange={(e) => setInlineData(p => ({...p, image: e.target.value}))} placeholder="Image URL" className="bg-white/20 border-none text-white placeholder-gray-300" />
+              <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/60 rounded-t-3xl md:rounded-l-3xl md:rounded-t-none">
+                <Input value={inlineData.image || ''} onChange={(e) => setInlineData(p => ({...p, image: e.target.value}))} placeholder="Image URL" className="bg-white/90 text-black placeholder:text-gray-500" />
               </div>
             )}
           </div>
           <div className="flex-1 p-6 space-y-4 relative">
             <div className="flex justify-between items-start">
               {!isEditingDetails ? (
-                <h2 className="text-3xl font-bold">{inlineData.name}{inlineData.rating && <span className="ml-3 text-lg font-semibold text-primary flex items-center"><Star className="h-4 w-4 fill-primary mr-1" />{inlineData.rating}</span>}</h2>
+                <h2 className="text-3xl font-bold">{inlineData.name}{inlineData.rating && <span className="ml-3 text-lg font-semibold text-primary inline-flex items-center"><Star className="h-4 w-4 fill-primary mr-1" />{inlineData.rating}</span>}</h2>
               ) : (
-                <Input value={inlineData.name} onChange={(e) => setInlineData(p => ({...p, name: e.target.value}))} className="text-3xl font-bold w-2/3" />
+                <Input value={inlineData.name} onChange={(e) => setInlineData(p => ({...p, name: e.target.value}))} className="text-3xl font-bold w-full md:w-2/3" />
               )}
-              {isEditingDetails && (
-                <Button size="sm" onClick={handleSaveDetails} className="ml-auto">Save Details</Button>
-              )}
+              {isEditingDetails && <Button size="sm" onClick={handleSaveDetails} className="ml-auto">Save Details</Button>}
             </div>
 
-            <div className="flex items-center text-muted-foreground">
-              <MapPin className="h-4 w-4 mr-2" />
-              {!isEditingDetails ? <p>{inlineData.location}</p> : <Input value={inlineData.location} onChange={(e) => setInlineData(p => ({...p, location: e.target.value}))} className="flex-1" />}
-            </div>
+            <div className="flex items-center text-muted-foreground"><MapPin className="h-4 w-4 mr-2" />{!isEditingDetails ? <p>{inlineData.location}</p> : <Input value={inlineData.location} onChange={(e) => setInlineData(p => ({...p, location: e.target.value}))} className="flex-1" />}</div>
 
-            <div className="flex items-center text-muted-foreground">
-              <span className="text-xl mr-2">₹</span>
-              {!isPriceEditing ? (
-                <p className="text-xl font-bold text-primary">{inlineData.price} <span className="text-sm font-normal text-muted-foreground">base price / 30 min</span></p>
-              ) : (
-                <Input
-                  type="number"
-                  value={inlineBasePrice}
-                  onChange={(e) => setInlineBasePrice(e.target.value)}
-                  onBlur={handleSaveDetails}
-                  className="w-32 text-xl"
-                />
-              )}
-            </div>
+            <div className="flex items-center text-muted-foreground"><span className="text-xl mr-2">₹</span>{!isPriceEditing ? <p className="text-xl font-bold text-primary">{inlineData.price} <span className="text-sm font-normal text-muted-foreground">base price / 30 min</span></p> : <Input type="number" value={inlineBasePrice} onChange={(e) => setInlineBasePrice(e.target.value)} className="w-32 text-xl" />}</div>
 
-            <div>
-              <Label className="text-muted-foreground">Amenities:</Label>
-              {!isEditingDetails ? <p className="text-sm">{inlineData.amenities?.join(', ') || 'N/A'}</p> : <Input value={inlineData.amenities?.join(', ') || ''} onChange={(e) => setInlineData(p => ({...p, amenities: e.target.value.split(',').map(s => s.trim())}))} placeholder="Comma-separated amenities" />}
-            </div>
-            
-            <div>
+            <EditableField label="Amenities" value={Array.isArray(inlineData.amenities) ? inlineData.amenities.join(', ') : ''} isEditing={isEditingDetails} onChange={(v) => setInlineData(p => ({...p, amenities: v.split(',').map(s => s.trim())}))} />
+
+            <div className="space-y-1">
               <Label className="text-muted-foreground">Sports:</Label>
-              {!isEditingDetails ? <p className="text-sm">{inlineData.sports?.join(', ') || 'N/A'}</p> : (
-                <div className="grid grid-cols-3 gap-2 mt-2 rounded-md border p-4">
-                  {sportsOptions.map((sportItem) => (
-                    <div key={sportItem} className="flex items-center space-x-2">
-                      <Checkbox id={`edit-${sportItem}`} checked={inlineData.sports.includes(sportItem)} onCheckedChange={() => handleInlineCheckboxChange(sportItem)} />
-                      <Label htmlFor={`edit-${sportItem}`} className="capitalize text-sm font-normal">{sportItem}</Label>
+              {isEditingDetails ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2 border p-4 rounded-md">
+                  {sportsOptions.map((s) => (
+                    <div key={s} className="flex items-center space-x-2">
+                      <Checkbox id={`edit-${s}`} checked={inlineData.sports.includes(s)} onCheckedChange={() => handleInlineCheckboxChange(s)} />
+                      <Label htmlFor={`edit-${s}`} className="text-sm font-normal capitalize">{s}</Label>
                     </div>
                   ))}
                 </div>
-              )}
+              ) : <p className="text-sm">{inlineData.sports?.join(', ')}</p>}
             </div>
 
-            <div>
+            <div className="space-y-1">
               <Label className="text-muted-foreground">Turf Owner:</Label>
               {isEditingDetails ? (
-                <Select value={inlineData.turf_owner_id || ''} onValueChange={(value) => setInlineData((prev: any) => ({ ...prev, turf_owner_id: value }))}>
+                <Select value={inlineData.turf_owner_id || ''} onValueChange={(v) => setInlineData(p => ({...p, turf_owner_id: v}))}>
                   <SelectTrigger><SelectValue placeholder="Select Owner" /></SelectTrigger>
-                  <SelectContent>
-                    {owners.map((owner) => (<SelectItem key={owner.id} value={owner.id}>{owner.name}</SelectItem>))}
-                  </SelectContent>
+                  <SelectContent>{owners.map((o) => (<SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>))}</SelectContent>
                 </Select>
-              ) : <p className="text-sm">{owners.find(o => o.id === inlineData.turf_owner_id)?.name || 'N/A'}</p>}
+              ) : <p className="text-sm font-medium">{owners.find(o => o.id === inlineData.turf_owner_id)?.name || 'N/A'}</p>}
             </div>
 
             <div className="pt-4 border-t border-border mt-4">
@@ -897,49 +714,28 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
                <div className="flex items-center justify-between mt-1">
                  <p className="text-sm font-medium">{inlineData.booking_window_days} Days</p>
                  {inlineData.pending_booking_window_days && (
-                   <div className="flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/30 p-2 rounded-md">
-                     <span className="text-xs text-yellow-600">
-                       Requested: <strong>{inlineData.pending_booking_window_days} Days</strong>
-                     </span>
-                     <div className="flex gap-1">
-                       <Button size="sm" variant="default" className="h-6 text-xs bg-green-600 hover:bg-green-700" onClick={handleApproveWindow}>
-                         Approve
-                       </Button>
-                       <Button size="sm" variant="destructive" className="h-6 text-xs" onClick={handleRejectWindow}>
-                         Reject
-                       </Button>
-                     </div>
+                   <div className="flex gap-3 bg-yellow-500/10 border border-yellow-500/30 p-2 rounded-md items-center">
+                     <span className="text-xs text-yellow-600">Requested: <strong>{inlineData.pending_booking_window_days} Days</strong></span>
+                     <Button size="sm" className="h-6 text-xs bg-green-600" onClick={handleApproveWindow}>Approve</Button>
+                     <Button size="sm" variant="destructive" className="h-6 text-xs" onClick={handleRejectWindow}>Reject</Button>
                    </div>
                  )}
                </div>
             </div>
 
-             {/* --- Settings Toggles & Windows --- */}
-            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-border">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-4 border-t border-border">
                <div className="flex flex-col space-y-2">
                  <div className="flex flex-col space-y-1">
                    <Label className="text-muted-foreground">Rescheduling</Label>
                    {isEditingDetails ? (
-                     <div className="flex items-center space-x-2">
-                       <Checkbox 
-                         id="allow_rescheduling" 
-                         checked={inlineData.allow_rescheduling}
-                         onCheckedChange={(checked) => setInlineData(p => ({...p, allow_rescheduling: checked as boolean}))}
-                       />
+                     <div className="flex items-center space-x-2 mt-1">
+                       <Checkbox id="allow_rescheduling" checked={inlineData.allow_rescheduling} onCheckedChange={(c) => setInlineData(p => ({...p, allow_rescheduling: c as boolean}))} />
                        <label htmlFor="allow_rescheduling" className="text-sm">Allow Users to Reschedule</label>
                      </div>
-                   ) : (
-                     <div className="flex items-center gap-2">
-                       {inlineData.allow_rescheduling 
-                         ? <Badge variant="outline" className="text-green-600 border-green-600">Allowed</Badge>
-                         : <Badge variant="outline" className="text-red-500 border-red-500">Not Allowed</Badge>
-                       }
-                     </div>
-                   )}
+                   ) : <div className="mt-1">{inlineData.allow_rescheduling ? <Badge variant="outline" className="text-green-600 border-green-600">Allowed</Badge> : <Badge variant="outline" className="text-red-500 border-red-500">Not Allowed</Badge>}</div>}
                  </div>
                  <div className="flex flex-col space-y-1">
-                    <Label className="text-muted-foreground">Reschedule Window (Days)</Label>
-                    <EditableField label="" value={inlineData.reschedule_window_days} isEditing={isEditingDetails} type="number" onChange={(v) => setInlineData(p => ({...p, reschedule_window_days: parseInt(v)}))} />
+                    <EditableField label="Reschedule Window (Days)" value={inlineData.reschedule_window_days} isEditing={isEditingDetails} type="number" onChange={(v) => setInlineData(p => ({...p, reschedule_window_days: parseInt(v)}))} />
                  </div>
                </div>
 
@@ -947,272 +743,110 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
                  <div className="flex flex-col space-y-1">
                    <Label className="text-muted-foreground">Cancellation & Refunds</Label>
                    {isEditingDetails ? (
-                     <div className="flex items-center space-x-2">
-                       <Checkbox 
-                         id="allow_refunds" 
-                         checked={inlineData.allow_refunds}
-                         onCheckedChange={(checked) => setInlineData(p => ({...p, allow_refunds: checked as boolean}))}
-                       />
+                     <div className="flex items-center space-x-2 mt-1">
+                       <Checkbox id="allow_refunds" checked={inlineData.allow_refunds} onCheckedChange={(c) => setInlineData(p => ({...p, allow_refunds: c as boolean}))} />
                        <label htmlFor="allow_refunds" className="text-sm">Allow Refunds</label>
                      </div>
+                   ) : <div className="mt-1">{inlineData.allow_refunds ? <Badge variant="outline" className="text-green-600 border-green-600">Refunds Active</Badge> : <Badge variant="outline" className="text-orange-500 border-orange-500">No Refunds</Badge>}</div>}
+                 </div>
+                 <div className="flex flex-col space-y-1">
+                    <EditableField label="Booking Window (Days)" value={inlineData.booking_window_days} isEditing={isEditingDetails} type="number" onChange={(v) => setInlineData(p => ({...p, booking_window_days: parseInt(v)}))} />
+                 </div>
+               </div>
+
+               {/* COMING SOON STATUS TOGGLE */}
+               <div className="flex flex-col space-y-2 col-span-full mt-4 p-4 border-2 border-dashed border-orange-500/30 rounded-2xl bg-orange-500/5">
+                 <div className="flex flex-col space-y-1">
+                   <Label className="text-orange-600 font-bold flex items-center gap-2">
+                     <Lock className="h-4 w-4" /> Coming Soon Mode
+                   </Label>
+                   <p className="text-xs text-muted-foreground">Blur the turf card on the user site to signal a future launch.</p>
+                   {isEditingDetails ? (
+                     <div className="flex items-center space-x-2 mt-2">
+                       <Checkbox 
+                         id="is_coming_soon" 
+                         checked={inlineData.is_coming_soon} 
+                         onCheckedChange={(checked) => setInlineData(p => ({...p, is_coming_soon: checked as boolean}))}
+                       />
+                       <label htmlFor="is_coming_soon" className="text-sm font-medium">Enable Coming Soon Overlay</label>
+                     </div>
                    ) : (
-                     <div className="flex items-center gap-2">
-                       {inlineData.allow_refunds 
-                         ? <Badge variant="outline" className="text-green-600 border-green-600">Refunds Active</Badge>
-                         : <Badge variant="outline" className="text-orange-500 border-orange-500">No Refunds</Badge>
-                       }
+                     <div className="mt-1">
+                       {inlineData.is_coming_soon ? (
+                         <Badge className="bg-orange-500 text-white border-orange-600">Coming Soon Active</Badge>
+                       ) : (
+                         <Badge variant="outline" className="text-muted-foreground border-border">Standard Mode</Badge>
+                       )}
                      </div>
                    )}
                  </div>
-                 <div className="flex flex-col space-y-1">
-                    <Label className="text-muted-foreground">Booking Window (Days)</Label>
-                    <EditableField label="" value={inlineData.booking_window_days} isEditing={isEditingDetails} type="number" onChange={(v) => setInlineData(p => ({...p, booking_window_days: parseInt(v)}))} />
-                 </div>
                </div>
             </div>
-            {/* --- END SETTINGS --- */}
           </div>
         </CardContent>
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Calendar */}
         <div className="lg:col-span-1 space-y-6">
           <Card className="bg-card border-border rounded-3xl">
             <CardHeader><CardTitle>Select Date</CardTitle></CardHeader>
             <CardContent>
-              <Calendar
-                mode="single"
-                selected={selectedDate}
-                onSelect={(date) => {
-                  if (date) {
-                    setSelectedDate(date);
-                    setDayPrice("");
-                  }
-                }}
-                className="rounded-md"
-              />
+              <Calendar mode="single" selected={selectedDate} onSelect={(d) => d && setSelectedDate(d)} className="rounded-md" />
               {isPriceEditing && (
                 <div className="mt-4 pt-4 border-t space-y-2">
-                  <Label htmlFor="day-price" className="font-semibold text-base">
-                    Price for {format(selectedDate, "PPP")}
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Set a price for all slots on this date.
-                  </p>
-                  <div className="flex gap-2">
-                    <Input
-                      id="day-price"
-                      type="number"
-                      placeholder="₹"
-                      value={dayPrice}
-                      onChange={(e) => setDayPrice(e.target.value)}
-                    />
-                    <Button onClick={handleSetDayPrice} disabled={!dayPrice}>Set</Button>
-                  </div>
+                  <Label>Price for {format(selectedDate, "PPP")}</Label>
+                  <div className="flex gap-2"><Input type="number" placeholder="₹" value={dayPrice} onChange={(e) => setDayPrice(e.target.value)} /><Button onClick={handleSetDayPrice} disabled={!dayPrice}>Set</Button></div>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Right Column: Availability & Pricing */}
         <div className="lg:col-span-2 space-y-6">
           {isPriceEditing ? (
             <Card className="bg-card border-border rounded-3xl">
-              <CardHeader>
-                <CardTitle>Set Bulk Prices for <span className="capitalize text-primary">{sport}</span></CardTitle>
-                <CardDescription>
-                  Set bulk prices here. Click individual slots to set specific overrides.
-                </CardDescription>
-              </CardHeader>
+              <CardHeader><CardTitle>Set Bulk Prices ({sport})</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex gap-4">
-                  <div className="flex-1 space-y-2">
-                    <Label>Weekday Price (Mon-Fri)</Label>
-                    <Input type="number" placeholder="₹" value={weekdayPrice} onChange={e => setWeekdayPrice(e.target.value)} />
-                  </div>
-                  <Button size="sm" className="self-end" onClick={() => handleSaveBulkPrice('weekday')}>Apply</Button>
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex-1 space-y-2">
-                    <Label>Weekend Price (Sat-Sun)</Label>
-                    <Input type="number" placeholder="₹" value={weekendPrice} onChange={e => setWeekendPrice(e.target.value)} />
-                  </div>
-                  <Button size="sm" className="self-end" onClick={() => handleSaveBulkPrice('weekend')}>Apply</Button>
-                </div>
+                <div className="flex gap-4"><div className="flex-1 space-y-2"><Label>Weekday</Label><Input type="number" value={weekdayPrice} onChange={e => setWeekdayPrice(e.target.value)} /></div><Button size="sm" className="self-end" onClick={() => handleSaveBulkPrice('weekday')}>Apply</Button></div>
+                <div className="flex gap-4"><div className="flex-1 space-y-2"><Label>Weekend</Label><Input type="number" value={weekendPrice} onChange={e => setWeekendPrice(e.target.value)} /></div><Button size="sm" className="self-end" onClick={() => handleSaveBulkPrice('weekend')}>Apply</Button></div>
               </CardContent>
             </Card>
           ) : (
             <Card className="bg-card border-border rounded-3xl">
-              <CardHeader><CardTitle>Pricing Rules for <span className="capitalize text-primary">{sport}</span></CardTitle></CardHeader>
+              <CardHeader><CardTitle>Pricing Rules ({sport})</CardTitle></CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <Button onClick={() => setShowRuleDialog(true)}>
-                    Add New Pricing Rule
-                  </Button>
-                  <div>
-                    <Label>View Applied Rules for {sport}</Label>
-                    <Select>
-                      <SelectTrigger className="w-full mt-1">
-                        <SelectValue placeholder={`Found ${pricingRules.length} rule(s). Click to view.`} />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-[300px]">
-                        {pricingRules.length === 0 && (
-                          <SelectItem value="none" disabled>No rules found for this sport.</SelectItem>
-                        )}
-                        {pricingRules.map(rule => {
-                          const ruleCopy: any = { ...rule };
-                          if (ruleCopy.slot_id) {
-                            const slot = timeSlots.find(s => s.id === ruleCopy.slot_id);
-                            if (slot) {
-                              ruleCopy.slot_time = slot.time;
-                              delete ruleCopy.slot_id;
-                            }
-                          }
-                          delete ruleCopy.id;
-                          delete ruleCopy.turf_id;
-                          delete ruleCopy.created_at;
-                          delete ruleCopy.sport;
-                          return (
-                            <SelectItem key={rule.id} value={rule.id} className="whitespace-pre-wrap text-xs">
-                              {JSON.stringify(ruleCopy, null, 2)}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <Button onClick={() => setShowRuleDialog(true)}>Add Rule</Button>
+                  <Select><SelectTrigger><SelectValue placeholder={`${pricingRules.length} rules active.`} /></SelectTrigger><SelectContent>{pricingRules.map(r => (<SelectItem key={r.id} value={r.id} className="text-xs">₹{r.price} - {r.date || r.day_type || 'General'}</SelectItem>))}</SelectContent></Select>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Slot Availability Grid */}
           <Card className="bg-card border-border rounded-3xl">
             <CardHeader>
-              <CardTitle>Slot Availability for {format(selectedDate, "PPP")}</CardTitle>
-              {isPriceEditing ? (
+              <CardTitle>Slots for {format(selectedDate, "PPP")}</CardTitle>
+              {isPriceEditing && (
                 <div className="flex justify-between items-center pt-2">
-                  <div className="flex items-center space-x-2">
-                    <Button size="sm" variant={isMultiSelect ? "default" : "outline"} onClick={() => { setIsMultiSelect(p => !p); setSelectedSlots([]); }}>
-                      {isMultiSelect ? <ToggleRight className="mr-2 h-4 w-4" /> : <ToggleLeft className="mr-2 h-4 w-4" />}
-                      Multi-Select
-                    </Button>
-                    {isMultiSelect && (
-                      <Button size="sm" onClick={handleOpenMultiSlotDialog} disabled={selectedSlots.length === 0}>
-                        Set Price for {selectedSlots.length} Slots
-                      </Button>
-                    )}
-                  </div>
-                  <Button variant="ghost" size="sm" onClick={fetchBookingsForDate} className="h-auto p-0 text-xs text-muted-foreground flex items-center">
-                    <RefreshCw className="h-3 w-3 mr-1" /> Refresh
+                  <Button size="sm" variant={isMultiSelect ? "default" : "outline"} onClick={() => { setIsMultiSelect(!isMultiSelect); setSelectedSlots([]); }}>
+                    {isMultiSelect ? <ToggleRight className="mr-2 h-4 w-4" /> : <ToggleLeft className="mr-2 h-4 w-4" />} Multi-Select
                   </Button>
+                  {isMultiSelect && <Button size="sm" onClick={handleOpenMultiSlotDialog} disabled={selectedSlots.length === 0}>Set for {selectedSlots.length} Slots</Button>}
                 </div>
-              ) : (
-                <CardDescription>
-                  <Button variant="ghost" size="sm" onClick={fetchBookingsForDate} className="h-auto p-0 text-xs text-muted-foreground flex items-center">
-                    <RefreshCw className="h-3 w-3 mr-1" /> Refresh
-                  </Button>
-                </CardDescription>
               )}
             </CardHeader>
             <CardContent>
-              {isBookingsLoading ? <p>Loading slots...</p> : (
+              {isBookingsLoading ? <p>Loading...</p> : (
                 <ScrollArea className="h-[400px]">
-                  {['day', 'evening'].map(period => (
-                    <div key={period} className="mb-6">
-                      <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-semibold capitalize">{period}</h3>
-                        {isPriceEditing && (
-                          <div className="flex items-center gap-2">
-                            <Label htmlFor={`price-${period}`} className="text-xs">Set {period} price:</Label>
-                            <Input
-                              id={`price-${period}`}
-                              type="number"
-                              placeholder="₹"
-                              value={periodPrices[period as 'day' | 'evening']}
-                              onChange={e => setPeriodPrices(p => ({ ...p, [period]: e.target.value }))}
-                              className="h-8 w-24"
-                            />
-                            <Button size="sm" className="h-8" onClick={() => handleSetPeriodPrice(period as 'day' | 'evening')}>Set</Button>
-                          </div>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pr-4">
-                        {timeSlots.filter(s => s.period === period).map((slot) => {
-                          const booking = bookings.find((b) => b.slotId === slot.id);
-                          const block = manualBlocks.find((b) => b.slotId === slot.id);
-                          const isBooked = !!booking || !!block;
-                          const isSelected = selectedSlots.includes(slot.id);
-                          
-                          let statusText = "Available";
-                          let bgColor = "bg-green-500/10 text-green-700";
-                          let borderColor = "border-green-500";
-                          let icon = <CheckCircle className="h-4 w-4 mr-1" />;
-                          
-                          if(isPriceEditing && !isBooked) {
-                            statusText = "Click to set price";
-                            bgColor = "bg-secondary/50";
-                            borderColor = "border-border";
-                            if(isSelected) {
-                              bgColor = "bg-primary/20";
-                              borderColor = "border-primary";
-                            }
-                          } else if (block) {
-                            statusText = `Blocked: ${block.reason || 'Offline'}`;
-                            bgColor = "bg-orange-500/10 text-orange-700";
-                            borderColor = "border-orange-500";
-                            icon = <XCircle className="h-4 w-4 mr-1" />;
-                          } else if (booking) {
-                            statusText = `Booked: ${booking.customerName}`;
-                            bgColor = "bg-blue-500/10 text-blue-700";
-                            borderColor = "border-blue-500";
-                            icon = <Clock className="h-4 w-4 mr-1" />;
-                            if (booking.status === 'completed') {
-                              bgColor = "bg-emerald-500/10 text-emerald-700";
-                              borderColor = "border-emerald-500";
-                              icon = <CheckCircle className="h-4 w-4 mr-1" />;
-                            } else if (booking.status === 'cancelled') {
-                              statusText = `Cancelled: ${booking.customerName}`;
-                              bgColor = "bg-red-500/10 text-red-700";
-                              borderColor = "border-red-500";
-                              icon = <XCircle className="h-4 w-4 mr-1" />;
-                            }
-                          }
-
+                  {['day', 'evening'].map(p => (
+                    <div key={p} className="mb-6">
+                      <h3 className="text-lg font-semibold capitalize mb-2">{p}</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        {timeSlots.filter(s => s.period === p).map((slot) => {
+                          const isBooked = bookings.some(b => b.slotId === slot.id) || manualBlocks.some(b => b.slotId === slot.id);
                           return (
-                            <Card
-                              key={slot.id}
-                              onClick={() => !isBooked && handleSlotClick(slot.id)}
-                              className={cn(
-                                "border", bgColor, borderColor,
-                                (isPriceEditing && !isBooked) && "cursor-pointer hover:border-primary",
-                                (isBooked && isPriceEditing) && "opacity-50 cursor-not-allowed"
-                              )}
-                            >
-                              <CardContent className="p-4">
-                                <p className="font-medium text-lg flex items-center">{icon} {slot.time}</p>
-                                <p className="text-sm text-muted-foreground">{statusText}</p>
-                                {booking && !isPriceEditing && (
-                                  <div className="flex flex-wrap gap-2 mt-2">
-                                    <Badge className={cn("capitalize text-xs",
-                                      booking.status === 'confirmed' ? 'bg-green-600 hover:bg-green-600/90 text-white' :
-                                      booking.status === 'pending' ? 'bg-yellow-500 hover:bg-yellow-500/90 text-black' :
-                                      booking.status === 'completed' ? 'bg-blue-600 hover:bg-blue-600/90 text-white' :
-                                      booking.status === 'cancelled' ? 'bg-red-600 hover:bg-red-600/90 text-white' : '')}>
-                                      {booking.status}
-                                    </Badge>
-                                    <Badge className={cn("capitalize text-xs",
-                                      booking.payment_status === 'paid' ? 'bg-green-600 hover:bg-green-600/90 text-white' :
-                                      booking.payment_status === 'refund processed' ? 'bg-blue-500 hover:bg-blue-500/90 text-white' :
-                                      booking.payment_status === 'refund_initiated' ? 'bg-orange-500 hover:bg-orange-500/90 text-white' :
-                                      booking.payment_status === 'pending' ? 'bg-red-500 hover:bg-red-500/90 text-white' : '')}>
-                                      {booking.payment_status.replace('_', ' ')}
-                                    </Badge>
-                                  </div>
-                                )}
-                              </CardContent>
+                            <Card key={slot.id} onClick={() => !isBooked && handleSlotClick(slot.id)} className={cn("border transition-all cursor-pointer", isBooked ? "bg-red-500/10 opacity-50" : (selectedSlots.includes(slot.id) ? "bg-primary/20 border-primary" : "bg-green-500/10 border-green-500"))}>
+                              <CardContent className="p-4"><p className="font-medium">{slot.time}</p><p className="text-xs">{isBooked ? "Unavailable" : "Available"}</p></CardContent>
                             </Card>
                           )
                         })}
@@ -1225,197 +859,13 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
           </Card>
         </div>
       </div>
-      
-      {/* --- DIALOGS --- */}
 
-      {/* 1. Old Pricing Rule Dialog */}
-      <Dialog open={showRuleDialog} onOpenChange={() => setShowRuleDialog(false)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Add Pricing Rule for {sport}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <Select value={ruleForm.ruleType} onValueChange={(v) => setRuleForm({ ...ruleForm, ruleType: v as any })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="slot">By Specific Slot</SelectItem>
-                <SelectItem value="day_of_week">By Day of Week</SelectItem>
-                <SelectItem value="date">By Specific Date</SelectItem>
-                <SelectItem value="range">By Time Range</SelectItem>
-                <SelectItem value="period">By Period (day/evening)</SelectItem>
-              </SelectContent>
-            </Select>
-            {ruleForm.ruleType === 'slot' && (
-              <Select value={ruleForm.slotId || ''} onValueChange={(v) => setRuleForm(f => ({ ...f, slotId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select Slot" /></SelectTrigger>
-                <SelectContent>
-                  {timeSlots.map(s => (
-                    <SelectItem key={s.id} value={s.id}>{s.time}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {ruleForm.ruleType === 'day_of_week' && (
-              <Select value={ruleForm.dayOfWeek} onValueChange={v => setRuleForm(f => ({ ...f, dayOfWeek: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select day (0=Sun, 1=Mon...)" /></SelectTrigger>
-                <SelectContent>
-                  {["0 (Sunday)", "1 (Monday)", "2 (Tuesday)", "3 (Wednesday)", "4 (Thursday)", "5 (Friday)", "6 (Saturday)"].map((day, i) => (
-                    <SelectItem key={i} value={i.toString()}>{day}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {ruleForm.ruleType === 'date' && (
-              <Input type="date" value={ruleForm.date} onChange={e => setRuleForm(f => ({ ...f, date: e.target.value }))} />
-            )}
-            {ruleForm.ruleType === 'range' && (
-              <>
-                <Input type="time" value={ruleForm.startTime} onChange={e => setRuleForm(f => ({ ...f, startTime: e.target.value }))} />
-                <Input type="time" value={ruleForm.endTime} onChange={e => setRuleForm(f => ({ ...f, endTime: e.target.value }))} />
-              </>
-            )}
-            {ruleForm.ruleType === 'period' && (
-              <>
-                <Select value={ruleForm.period} onValueChange={v => setRuleForm(f => ({ ...f, period: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select period" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="day">Day</SelectItem>
-                    <SelectItem value="evening">Evening</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={ruleForm.dayType} onValueChange={v => setRuleForm(f => ({ ...f, dayType: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Weekday/Weekend" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="weekday">Weekday</SelectItem>
-                    <SelectItem value="weekend">Weekend</SelectItem>
-                  </SelectContent>
-                </Select>
-              </>
-            )}
-            <Input type="number" placeholder="Price" value={ruleForm.price} onChange={e => setRuleForm(f => ({ ...f, price: e.target.value }))} />
-            <Input type="number" placeholder="Priority (higher = override)" value={ruleForm.priority} onChange={e => setRuleForm(f => ({ ...f, priority: e.target.value }))} />
-          </div>
-          <DialogFooter>
-            <Button onClick={handleSaveOldRule}>Save Rule</Button>
-            <Button variant="ghost" onClick={() => setShowRuleDialog(false)}>Cancel</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      {/* 2. Slot Price Dialog */}
-      <Dialog open={showSlotPriceDialog} onOpenChange={setShowSlotPriceDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Set Price for Slot(s)</DialogTitle>
-            <DialogDescription>
-              You are setting the price for {currentPriceChange?.slots?.length || 0} slot(s)
-              on {format(selectedDate, "PPP")}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Label htmlFor="slot-price">New Price (₹)</Label>
-            <Input
-              id="slot-price"
-              type="number"
-              placeholder="₹1200"
-              value={currentPriceChange?.price || ""}
-              onChange={(e) => setCurrentPriceChange((p: any) => ({ ...p, price: e.target.value }))}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={resetPriceDialogs}>Cancel</Button>
-            <Button onClick={() => setShowApplyDialog(true)} disabled={!currentPriceChange?.price}>Next</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      {/* 3. Apply Slot Price Dialog */}
-      <Dialog open={showApplyDialog} onOpenChange={setShowApplyDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>How do you want to apply this price?</DialogTitle>
-            <DialogDescription>
-              Set price to **₹{currentPriceChange?.price}** for the selected slot(s).
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col space-y-3 pt-4">
-            <Button onClick={() => handleSaveSlotPriceRule('date_only')}>
-              Apply for {format(selectedDate, "PPP")} **Only**
-            </Button>
-            <Button variant="outline" onClick={() => handleSaveSlotPriceRule('every_day')}>
-              Apply for this time **Every Day**
-            </Button>
-            <Button variant="outline" onClick={() => handleSaveSlotPriceRule('weekday')}>
-              Apply for this time **Every Weekday**
-            </Button>
-            <Button variant="outline" onClick={() => handleSaveSlotPriceRule('weekend')}>
-              Apply for this time **Every Weekend**
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      
-      {/* 4. Apply Day Price Dialog */}
-      <Dialog open={showDayPriceDialog} onOpenChange={setShowDayPriceDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>How do you want to apply this price?</DialogTitle>
-            <DialogDescription>
-              Set all slots on **{format(currentPriceChange?.date || new Date(), "PPP")}** to **₹{currentPriceChange?.price}**?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col space-y-3 pt-4">
-            <Button onClick={() => handleSaveDayPriceRule('date_only')}>
-              Apply for {format(currentPriceChange?.date || new Date(), "PPP")} **Only**
-            </Button>
-            <Button variant="outline" onClick={() => handleSaveDayPriceRule('every_day_of_week')}>
-              Apply to **Every {format(currentPriceChange?.date || new Date(), "EEEE")}**
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 5. Conflict Dialog */}
-      <Dialog open={showConflictDialog} onOpenChange={setShowConflictDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><AlertCircle className="text-destructive"/> Rule Conflict Found</DialogTitle>
-            <DialogDescription>
-              A rule with these exact parameters already exists.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 pt-2">
-            <p className="font-semibold">Existing Rule:</p>
-            <pre className="text-xs p-2 bg-secondary rounded-md">Price: ₹{conflictingRule?.price}</pre>
-            <p className="font-semibold">New Rule:</p>
-            <pre className="text-xs p-2 bg-secondary rounded-md">Price: ₹{currentPriceChange?.price}</pre>
-            <p className="pt-2">Do you want to override the existing rule with the new price?</p>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={resetPriceDialogs}>Cancel</Button>
-            <Button onClick={handleOverrideRule}>Override</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 6. NEW: Apply Period Price Dialog */}
-      <Dialog open={showPeriodPriceDialog} onOpenChange={setShowPeriodPriceDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>How do you want to apply this price?</DialogTitle>
-            <DialogDescription>
-              Set all **{currentPriceChange?.period}** slots to **₹{currentPriceChange?.price}**?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col space-y-3 pt-4">
-            <Button onClick={() => handleSavePeriodPriceRule('date_only')}>
-              Apply for {format(selectedDate, "PPP")} **Only**
-            </Button>
-            <Button variant="outline" onClick={() => handleSavePeriodPriceRule('every_day')}>
-              Apply for this time **Every Day**
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
+      <Dialog open={showRuleDialog} onOpenChange={setShowRuleDialog}><DialogContent><DialogHeader><DialogTitle>Add Pricing Rule</DialogTitle></DialogHeader><div className="space-y-4"><Select onValueChange={(v) => setRuleForm({...ruleForm, ruleType: v})}><SelectTrigger><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="slot">Slot</SelectItem><SelectItem value="date">Date</SelectItem><SelectItem value="period">Period</SelectItem></SelectContent></Select><Input type="number" placeholder="Price" onChange={e => setRuleForm({...ruleForm, price: e.target.value})} /><Input type="number" placeholder="Priority" onChange={e => setRuleForm({...ruleForm, priority: e.target.value})} /></div><DialogFooter><Button onClick={handleSaveOldRule}>Save</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={showSlotPriceDialog} onOpenChange={setShowSlotPriceDialog}><DialogContent><DialogHeader><DialogTitle>Set Slot Price</DialogTitle></DialogHeader><Input type="number" placeholder="₹" onChange={(e) => setCurrentPriceChange({...currentPriceChange, price: e.target.value})} /><DialogFooter><Button onClick={() => setShowApplyDialog(true)}>Next</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={showApplyDialog} onOpenChange={setShowApplyDialog}><DialogContent><DialogHeader><DialogTitle>Scope</DialogTitle></DialogHeader><div className="flex flex-col gap-2"><Button onClick={() => handleSaveSlotPriceRule('date_only')}>Today</Button><Button variant="outline" onClick={() => handleSaveSlotPriceRule('every_day')}>Every Day</Button><Button variant="outline" onClick={() => handleSaveSlotPriceRule('weekday')}>Weekdays</Button><Button variant="outline" onClick={() => handleSaveSlotPriceRule('weekend')}>Weekends</Button></div></DialogContent></Dialog>
+      <Dialog open={showDayPriceDialog} onOpenChange={setShowDayPriceDialog}><DialogContent><DialogHeader><DialogTitle>Apply Day Price</DialogTitle></DialogHeader><div className="flex flex-col gap-2"><Button onClick={() => handleSaveDayPriceRule('date_only')}>Today Only</Button><Button variant="outline" onClick={() => handleSaveDayPriceRule('every_day_of_week')}>Every {format(selectedDate, 'EEEE')}</Button></div></DialogContent></Dialog>
+      <Dialog open={showConflictDialog} onOpenChange={setShowConflictDialog}><DialogContent><DialogHeader><DialogTitle>Override Rule?</DialogTitle></DialogHeader><p>A rule already exists for this scope. Override it?</p><DialogFooter><Button variant="ghost" onClick={resetPriceDialogs}>Cancel</Button><Button onClick={handleOverrideRule}>Override</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={showPeriodPriceDialog} onOpenChange={setShowPeriodPriceDialog}><DialogContent><DialogHeader><DialogTitle>Apply Period Price</DialogTitle></DialogHeader><div className="flex flex-col gap-2"><Button onClick={() => handleSavePeriodPriceRule('date_only')}>Today Only</Button><Button variant="outline" onClick={() => handleSavePeriodPriceRule('every_day')}>Every Day</Button></div></DialogContent></Dialog>
     </div>
   );
 }
@@ -1425,20 +875,11 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
 // ==================================================================
 export default function TurfsTab() {
   const [selectedTurf, setSelectedTurf] = useState<Turf | null>(null);
-  const [selectedSport, setSelectedSport] = useState<string>("football"); // Store sport
+  const [selectedSport, setSelectedSport] = useState<string>("football");
 
   if (selectedTurf) {
-    return <TurfDetailDashboard 
-      turf={selectedTurf} 
-      sport={selectedSport} // Pass sport as prop
-      onBack={() => setSelectedTurf(null)} 
-    />;
+    return <TurfDetailDashboard turf={selectedTurf} sport={selectedSport} onBack={() => setSelectedTurf(null)} />;
   } else {
-    return <TurfListingGrid 
-      onSelectTurf={(turf, sport) => {
-        setSelectedTurf(turf);
-        setSelectedSport(sport); // Set sport on selection
-      }} 
-    />;
+    return <TurfListingGrid onSelectTurf={(turf, sport) => { setSelectedTurf(turf); setSelectedSport(sport); }} />;
   }
 }
