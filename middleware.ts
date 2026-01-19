@@ -2,12 +2,14 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // 1. Setup the response placeholder
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   })
 
+  // 2. Create the Supabase client
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -17,77 +19,83 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
+          request.cookies.set({ name, value, ...options })
           response = NextResponse.next({
             request: {
               headers: request.headers,
             },
           })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
+          response.cookies.set({ name, value, ...options })
         },
         remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
+          request.cookies.set({ name, value: '', ...options })
           response = NextResponse.next({
             request: {
               headers: request.headers,
             },
           })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
+          response.cookies.set({ name, value: '', ...options })
         },
       },
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // 3. Check the Session
+  // We use getUser() to validate the token on the server
+  const { data: { user }, error } = await supabase.auth.getUser()
 
-  // 1. Protect Admin Routes
+  // --- DEBUGGING LOGS (Check your VS Code Terminal) ---
+  if (request.nextUrl.pathname.startsWith('/admin')) {
+    console.log("------------------------------------------------")
+    console.log(`Middleware accessing: ${request.nextUrl.pathname}`)
+    console.log(`User ID found: ${user?.id || 'NONE'}`)
+    if (error) console.log(`Auth Error: ${error.message}`)
+    
+    // Check if a cookie exists at all
+    const allCookies = request.cookies.getAll().map(c => c.name)
+    console.log("Cookies present:", allCookies)
+  }
+  // ---------------------------------------------------
+
+  // 4. Protect Admin Routes
   if (request.nextUrl.pathname.startsWith('/admin')) {
     if (!user) {
-      return NextResponse.redirect(new URL('/login?role=admin', request.url))
+      console.log("Redirecting to Login: No User Session")
+      return NextResponse.redirect(new URL('/login', request.url))
     }
     
-    // Check Role
-    const { data: profile } = await supabase
-      .from('profiles')
+    // Query the users table for the role
+    const { data: userRecord, error: dbError } = await supabase
+      .from('users')
       .select('role')
       .eq('id', user.id)
       .single()
 
-    if (profile?.role !== 'admin') {
-      return NextResponse.redirect(new URL('/unauthorized', request.url))
+    console.log(`Role found in DB: ${userRecord?.role}`)
+
+    if (!userRecord || userRecord.role !== 'admin') {
+      console.log("Redirecting to Home: User is not Admin")
+      return NextResponse.redirect(new URL('/', request.url))
     }
   }
 
-  // 2. Protect Owner Routes
-  if (request.nextUrl.pathname.startsWith('/owner') && !request.nextUrl.pathname.startsWith('/owner/login') && !request.nextUrl.pathname.startsWith('/owner/signup')) {
+  // 5. Protect Owner Routes
+  if (request.nextUrl.pathname.startsWith('/owner') && 
+      !request.nextUrl.pathname.startsWith('/owner/login') && 
+      !request.nextUrl.pathname.startsWith('/owner/signup')) {
+    
     if (!user) {
       return NextResponse.redirect(new URL('/owner/login', request.url))
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
+    const { data: userRecord } = await supabase
+      .from('users')
       .select('role')
       .eq('id', user.id)
       .single()
 
-    if (profile?.role !== 'owner' && profile?.role !== 'admin') {
-      return NextResponse.redirect(new URL('/unauthorized', request.url))
+    if (!userRecord || (userRecord.role !== 'owner' && userRecord.role !== 'admin')) {
+      return NextResponse.redirect(new URL('/', request.url))
     }
   }
 

@@ -1,6 +1,8 @@
 "use client"
+
 import { useRef, useState, useEffect } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { ArrowRight, Calendar, Clock, MapPin, ChevronRight, ChevronLeft, User, Building2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -11,19 +13,36 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
+import { supabase } from "@/lib/supabaseClient"
+import { useUserStore } from "@/lib/userStore"
 
 export default function Home() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  
+  // Get the user name from your global store
+  const { name } = useUserStore()
 
   useEffect(() => {
-    // Show popup after 3 seconds
-    const timer = setTimeout(() => {
-      setShowAuthModal(true)
-    }, 3000)
+    // 1. If we already have a name in the store, the user is logged in.
+    // Stop here and do NOT show the popup.
+    if (name) return;
 
-    return () => clearTimeout(timer)
-  }, [])
+    const checkSessionAndSchedulePopup = async () => {
+      // 2. Double check with Supabase (in case store is empty but cookie exists)
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      // 3. Only if NO name AND NO session, start the timer
+      if (!session) {
+        const timer = setTimeout(() => {
+          setShowAuthModal(true)
+        }, 3000)
+        return () => clearTimeout(timer)
+      }
+    }
+
+    checkSessionAndSchedulePopup()
+  }, [name]) // Re-run if name changes (e.g. user logs out)
 
   const scrollRight = () => {
     if (scrollContainerRef.current) {
@@ -48,7 +67,7 @@ export default function Home() {
       id: "football",
       name: "Football",
       description: "Book a turf for a game of football with friends or colleagues.",
-      image: "/cards/football.jpg?height=400&width=300",
+      image: "/cards/football.jpg",
       subtitle: "Most Popular",
       icon: "/icons/football.svg",
     },
@@ -56,7 +75,7 @@ export default function Home() {
       id: "cricket",
       name: "Cricket",
       description: "Find the perfect pitch for your cricket match in Kolkata.",
-      image: "/cards/cricket.jpg?height=400&width=300",
+      image: "/cards/cricket.jpg",
       subtitle: "Team Sport",
       icon: "/icons/cricket.svg",
     },
@@ -64,7 +83,7 @@ export default function Home() {
       id: "pickleball",
       name: "Pickleball",
       description: "Book a court for the fastest growing sport in India.",
-      image: "/cards/pickleball.jpg?height=400&width=300",
+      image: "/cards/pickleball.jpg",
       subtitle: "Trending Now",
       icon: "/icons/pickleball.svg",
     },
@@ -72,7 +91,7 @@ export default function Home() {
       id: "badminton",
       name: "Badminton",
       description: "Indoor and outdoor courts available for badminton enthusiasts.",
-      image: "/cards/badminton.jpg?height=400&width=300",
+      image: "/cards/badminton.jpg",
       subtitle: "Indoor Sport",
       icon: "/icons/badminton.svg",
     },
@@ -80,7 +99,7 @@ export default function Home() {
       id: "table-tennis",
       name: "Table Tennis",
       description: "Professional tables for casual and competitive play.",
-      image: "/cards/tabletennis2.jpg?height=400&width=300",
+      image: "/cards/tabletennis2.jpg",
       subtitle: "All Weather",
       icon: "/icons/tabletennis.svg",
     },
@@ -88,7 +107,7 @@ export default function Home() {
       id: "basketball",
       name: "Basketball",
       description: "Full and half courts available for basketball games.",
-      image: "/cards/basketball.jpg?height=400&width=300",
+      image: "/cards/basketball.jpg",
       subtitle: "Team Sport",
       icon: "/icons/basketball.svg",
     },
@@ -98,14 +117,22 @@ export default function Home() {
     <Link href={`/turfs?sport=${sport.id}`} className="block h-full">
       <Card className="overflow-hidden border-0 shadow-lg rounded-3xl h-[420px] relative group">
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent z-10"></div>
-        <img
+        <Image
           src={sport.image}
           alt={sport.name}
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+          fill
+          className="object-cover transition-transform duration-500 group-hover:scale-110"
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
         />
         <div className="absolute bottom-0 left-0 right-0 p-6 z-20 transition-all duration-300 group-hover:pb-10">
-          <div className="bg-primary rounded-full p-3 w-14 h-14 flex items-center justify-center mb-4">
-            <img src={sport.icon || "/placeholder.svg"} alt={`${sport.name} icon`} className="h-8 w-8 object-contain" />
+          <div className="bg-primary rounded-full p-3 w-14 h-14 flex items-center justify-center mb-4 relative">
+            <Image 
+              src={sport.icon || "/placeholder.svg"} 
+              alt={`${sport.name} icon`} 
+              width={32} 
+              height={32} 
+              className="object-contain" 
+            />
           </div>
           <p className="text-mint-light text-sm font-medium mb-2">{sport.subtitle}</p>
           <h3 className="text-2xl font-bold text-white mb-1">{sport.name}</h3>
@@ -207,7 +234,7 @@ export default function Home() {
         </Card>
       </section>
 
-      {/* Auth Popup */}
+      {/* Auth Popup - Now correctly suppressed if user is logged in */}
       <Dialog open={showAuthModal} onOpenChange={setShowAuthModal}>
         <DialogContent className="sm:max-w-md bg-card border-border">
           <DialogHeader>
@@ -218,7 +245,6 @@ export default function Home() {
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <Button asChild className="w-full py-6 text-lg rounded-xl" variant="default">
-              {/* UPDATED: Points to new Login page */}
               <Link href="/login">
                 <User className="mr-2 h-5 w-5" />
                 Player Login / Check Bookings
@@ -241,7 +267,7 @@ export default function Home() {
               </Link>
             </Button>
             <div className="text-center text-sm text-muted-foreground">
-               New Partner? <Link href="/owner/signup" className="text-primary hover:underline">Register your turf here</Link>
+                New Partner? <Link href="/owner/signup" className="text-primary hover:underline">Register your turf here</Link>
             </div>
           </div>
         </DialogContent>
