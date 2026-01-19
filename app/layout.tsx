@@ -35,10 +35,68 @@ const qualyNeue = localFont({
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Khelconnect",
-  description: "Book sports turfs in Kolkata for football, cricket, and pickleball",
-    generator: 'v0.dev'
+  title: {
+    default: "Khelconnect | Book Sports Turfs in Kolkata",
+    template: "%s | Khelconnect",
+  },
+  description:
+    "Khelconnect helps you book football, cricket, and pickleball turfs in Kolkata with flexible 30-minute slots. Discover, compare, and book sports venues instantly.",
+
+  keywords: [
+    "sports turf booking Kolkata",
+    "football turf Kolkata",
+    "cricket turf Kolkata",
+    "pickleball court Kolkata",
+    "book turf online Kolkata",
+    "Khelconnect",
+  ],
+
+  metadataBase: new URL("https://khelconnect.in"), // change if different
+  alternates: {
+    canonical: "https://khelconnect.in",
+  },
+
+  openGraph: {
+    title: "Khelconnect | Book Sports Turfs in Kolkata",
+    description:
+      "Book football, cricket, and pickleball turfs in Kolkata with flexible time slots. Easy discovery, instant booking.",
+    url: "https://khelconnect.in",
+    siteName: "Khelconnect",
+    images: [
+      {
+        url: "/og.png", // create this (1200x630)
+        width: 1200,
+        height: 630,
+        alt: "Khelconnect – Sports Turf Booking Platform",
+      },
+    ],
+    locale: "en_IN",
+    type: "website",
+  },
+
+  twitter: {
+    card: "summary_large_image",
+    title: "Khelconnect | Book Sports Turfs in Kolkata",
+    description:
+      "Find and book football, cricket, and pickleball turfs in Kolkata instantly.",
+    images: ["/og.png"],
+  },
+
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+
+  category: "Sports Booking",
 }
+
 
 export default function RootLayout({
   children,
