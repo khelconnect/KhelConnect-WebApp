@@ -15,22 +15,31 @@ import {
 } from "@/components/ui/dialog"
 import { supabase } from "@/lib/supabaseClient"
 import { useUserStore } from "@/lib/userStore"
+// --- IMPORT UNIVERSAL LOADER ---
+import { UniversalLoader } from "@/components/ui/universal-loader"
 
 export default function Home() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  // --- ADD LOADING STATE ---
+  const [loading, setLoading] = useState(true)
   
   // Get the user name from your global store
   const { name } = useUserStore()
 
   useEffect(() => {
     // 1. If we already have a name in the store, the user is logged in.
-    // Stop here and do NOT show the popup.
-    if (name) return;
+    if (name) {
+      setLoading(false)
+      return
+    }
 
     const checkSessionAndSchedulePopup = async () => {
-      // 2. Double check with Supabase (in case store is empty but cookie exists)
+      // 2. Double check with Supabase
       const { data: { session } } = await supabase.auth.getSession()
+      
+      // Stop the loader once the session check is complete
+      setLoading(false)
       
       // 3. Only if NO name AND NO session, start the timer
       if (!session) {
@@ -42,7 +51,7 @@ export default function Home() {
     }
 
     checkSessionAndSchedulePopup()
-  }, [name]) // Re-run if name changes (e.g. user logs out)
+  }, [name])
 
   const scrollRight = () => {
     if (scrollContainerRef.current) {
@@ -144,6 +153,9 @@ export default function Home() {
     </Link>
   )
 
+  // --- RETURN UNIVERSAL LOADER IF LOADING ---
+  if (loading) return <UniversalLoader />
+
   return (
     <main className="container mx-auto px-6 py-12">
       <section className="mb-16 text-center max-w-3xl mx-auto">
@@ -234,7 +246,7 @@ export default function Home() {
         </Card>
       </section>
 
-      {/* Auth Popup - Now correctly suppressed if user is logged in */}
+      {/* Auth Popup - Correctly suppressed if user is logged in */}
       <Dialog open={showAuthModal} onOpenChange={setShowAuthModal}>
         <DialogContent className="sm:max-w-md bg-card border-border">
           <DialogHeader>

@@ -12,9 +12,11 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { Loader2, User, Calendar, MapPin, Clock, CreditCard, Star, Edit2, LogOut, CheckCircle, AlertCircle } from "lucide-react"
+import { User, Calendar, MapPin, Clock, CreditCard, Star, Edit2, LogOut, CheckCircle, AlertCircle } from "lucide-react"
 import { format, isPast } from "date-fns"
 import { cn } from "@/lib/utils"
+// --- IMPORT UNIVERSAL LOADER ---
+import { UniversalLoader } from "@/components/ui/universal-loader"
 
 // --- TYPES ---
 type BookingDetail = {
@@ -166,7 +168,8 @@ export default function UserProfilePage() {
   const completedBookings = bookings.filter(b => (isPast(new Date(b.date)) || b.status === 'completed') && b.status !== 'cancelled')
   const pendingPayments = bookings.filter(b => b.payment_status === 'pending' && b.status !== 'cancelled')
 
-  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>
+  // --- INITIAL LOADING STATE ---
+  if (loading) return <UniversalLoader />
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-6xl">
@@ -344,6 +347,9 @@ export default function UserProfilePage() {
       {/* --- EDIT PROFILE MODAL --- */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent className="sm:max-w-md">
+          {/* ACTION LOADING STATE */}
+          {isUpdating && <UniversalLoader />}
+          
           <DialogHeader>
             <DialogTitle>Edit Profile</DialogTitle>
             <DialogDescription>Update your personal details.</DialogDescription>
@@ -360,7 +366,9 @@ export default function UserProfilePage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleUpdateProfile} disabled={isUpdating}>{isUpdating ? <Loader2 className="animate-spin"/> : "Save Changes"}</Button>
+            <Button onClick={handleUpdateProfile} disabled={isUpdating}>
+              Save Changes
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -368,6 +376,9 @@ export default function UserProfilePage() {
       {/* --- RATING MODAL --- */}
       <Dialog open={ratingModalOpen} onOpenChange={setRatingModalOpen}>
         <DialogContent className="sm:max-w-md">
+          {/* ACTION LOADING STATE */}
+          {isSubmittingReview && <UniversalLoader />}
+          
           <DialogHeader>
             <DialogTitle>Rate Your Experience</DialogTitle>
             <DialogDescription>How was your game at the turf?</DialogDescription>
@@ -398,7 +409,7 @@ export default function UserProfilePage() {
           </div>
           <DialogFooter>
             <Button onClick={handleSubmitReview} disabled={ratingValue === 0 || isSubmittingReview}>
-              {isSubmittingReview ? <Loader2 className="animate-spin"/> : "Submit Review"}
+              Submit Review
             </Button>
           </DialogFooter>
         </DialogContent>
