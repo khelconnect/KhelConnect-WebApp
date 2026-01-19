@@ -5,12 +5,12 @@ export const dynamic = "force-dynamic";
 import { useSearchParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
-import { MapPin, Star, ArrowRight, ArrowLeft, Loader2 } from "lucide-react"
+import { MapPin, Star, ArrowRight, ArrowLeft, Lock } from "lucide-react" // Added Lock icon
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
-import { cn } from "@/lib/utils" // Import cn utility
+import { cn } from "@/lib/utils"
 
 interface Turf {
   id: string
@@ -22,6 +22,7 @@ interface Turf {
   amenities: string[]
   distance: string
   sports: string[]
+  is_coming_soon: boolean // Added to match admin data
 }
 
 export default function TurfsPage() {
@@ -75,16 +76,15 @@ export default function TurfsPage() {
   const sportIcon = sportIcons[sport as keyof typeof sportIcons] || sportIcons.football
   const sportName = sportNames[sport as keyof typeof sportNames] || "Sport"
 
-  const handleSelectTurf = (turfId: string) => {
-    router.push(`/booking?sport=${sport}&turf=${turfId}`)
+  const handleSelectTurf = (turf: Turf) => {
+    if (turf.is_coming_soon) return; // Prevent navigation
+    router.push(`/booking?sport=${sport}&turf=${turf.id}`)
   }
 
   // --- Main Render ---
   return (
-    // This is the original, correct main container
     <main className="container mx-auto px-6 py-12">
       
-      {/* This heading section stays at the top */}
       <div className="mb-12 max-w-5xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <Button variant="ghost" size="sm" asChild className="gap-2 text-foreground">
@@ -119,7 +119,6 @@ export default function TurfsPage() {
         </p>
       </div>
 
-      {/* This div wraps all content *below* the header */}
       <div className="max-w-5xl mx-auto">
         {loading && (
           <SkeletonGrid />
@@ -130,12 +129,33 @@ export default function TurfsPage() {
             {turfs.map((turf) => (
               <Card
                 key={turf.id}
-                className="overflow-hidden hover:shadow-xl transition-all hover:border-primary cursor-pointer bg-card border-border rounded-3xl"
-                onClick={() => handleSelectTurf(turf.id)}
+                className={cn(
+                  "relative overflow-hidden transition-all border-border rounded-3xl",
+                  turf.is_coming_soon ? "cursor-default" : "hover:shadow-xl hover:border-primary cursor-pointer"
+                )}
+                onClick={() => handleSelectTurf(turf)}
               >
+                {/* --- COMING SOON OVERLAY --- */}
+                {turf.is_coming_soon && (
+                  <div className="absolute inset-0 z-20 backdrop-blur-md bg-background/30 flex flex-col items-center justify-center transition-all duration-500">
+                    {/* Re-rendering Name inside overlay to keep it visible/clear */}
+                    <h2 className="text-2xl font-bold mb-4 text-foreground drop-shadow-sm">
+                      {turf.name}
+                    </h2>
+                    
+                    {/* Green Border Rounded Rectangle */}
+                    <div className="px-6 py-2 border-2 border-primary rounded-full bg-background/50 backdrop-blur-sm">
+                      <span className="text-primary font-bold tracking-wider uppercase text-sm flex items-center gap-2">
+                        <Lock className="h-4 w-4" />
+                        Coming Soon
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="aspect-video relative">
                   <img src={turf.image || "/placeholder.svg"} alt={turf.name} className="w-full h-full object-cover" />
-                  {turf.rating && (
+                  {turf.rating && !turf.is_coming_soon && (
                     <div className="absolute top-4 right-4 bg-primary rounded-full px-3 py-1.5 flex items-center shadow-md">
                       <Star className="h-5 w-5 text-white fill-white mr-1.5" />
                       <span className="font-medium text-base text-white">{turf.rating}</span>
@@ -168,9 +188,12 @@ export default function TurfsPage() {
                       </Badge>
                     ))}
                   </div>
-                  <Button className="w-full mt-2 bg-primary hover:bg-mint-dark text-white text-base py-6 rounded-full">
-                    Select This Turf
-                    <ArrowRight className="ml-2 h-5 w-5" />
+                  <Button 
+                    className="w-full mt-2 bg-primary hover:bg-mint-dark text-white text-base py-6 rounded-full"
+                    disabled={turf.is_coming_soon}
+                  >
+                    {turf.is_coming_soon ? "Coming Soon" : "Select This Turf"}
+                    {!turf.is_coming_soon && <ArrowRight className="ml-2 h-5 w-5" />}
                   </Button>
                 </CardContent>
               </Card>
@@ -190,9 +213,6 @@ export default function TurfsPage() {
 // --- HELPER COMPONENTS ---
 // ==================================================================
 
-/**
- * A single placeholder card that mimics the TurfCard layout.
- */
 function TurfCardSkeleton() {
   return (
     <Card className="overflow-hidden bg-card border-border rounded-3xl">
@@ -213,9 +233,6 @@ function TurfCardSkeleton() {
   );
 }
 
-/**
- * Renders a grid of skeleton cards.
- */
 function SkeletonGrid() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
@@ -225,19 +242,12 @@ function SkeletonGrid() {
   );
 }
 
-/**
- * The "Coming Soon" view. This component now renders directly onto the
- * page background, centered in the available space.
- */
 function ComingSoonView({ sportName }: { sportName: string }) {
   return (
-    // This div will create the vertical space to center the message
     <div className="flex flex-col items-center justify-center text-center min-h-[50vh] p-6">
-      {/* This is the main content, no card, no shadow */}
       <div className="max-w-md p-8"> 
         <Badge 
           variant="outline"
-          // UPDATED: Added Tailwind classes for a thin green border and text
           className={cn(
             "mb-4 text-base py-1.5 px-4 rounded-full",
             "border-green-500 text-green-500 bg-transparent"
