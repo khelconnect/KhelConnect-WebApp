@@ -1,4 +1,4 @@
-"use client"
+"use client";
 import { UniversalLoader } from "@/components/ui/universal-loader"
 
 export default function Loading() {
