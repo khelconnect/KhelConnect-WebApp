@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 // 1. ADDED: Time utilities
 import { format, startOfDay, isBefore, isSameDay, addDays, isAfter, differenceInSeconds, parseISO, addMinutes } from "date-fns";
 import { supabase } from "@/lib/supabaseClient";

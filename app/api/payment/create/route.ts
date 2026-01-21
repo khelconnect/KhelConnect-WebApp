@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     // Safe Base URL logic
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL 
       ? process.env.NEXT_PUBLIC_BASE_URL 
-      : 'http://localhost:3000';
+      : 'http://khelconnect.in';
 
 
     if (!apiKey || !productId) {
