@@ -27,6 +27,7 @@ export async function POST(req: Request) {
       ? process.env.NEXT_PUBLIC_BASE_URL 
       : 'http://localhost:3000';
 
+
     if (!apiKey || !productId) {
       return NextResponse.json({ error: "Server configuration error: Missing Keys" }, { status: 500, headers: corsHeaders });
     }

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
-  Clock, Users, Plus, Trash2, Loader2, AlertTriangle, CheckCircle, XCircle, Settings, LogOut, CalendarIcon, Lock, StickyNote
+  Clock, Users, Plus, Trash2, AlertTriangle, CheckCircle, XCircle, Settings, LogOut, CalendarIcon, Lock, StickyNote
 } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { format, isPast, isSameDay } from "date-fns"
@@ -23,6 +23,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+// --- IMPORT UNIVERSAL LOADER ---
+import { UniversalLoader } from "@/components/ui/universal-loader"
 
 // --- TYPES ---
 type TimeSlotDisplay = { id: string; time: string; endTime: string }
@@ -53,11 +55,11 @@ type GroupedBookingType = {
   startTime: string; 
   endTime: string; 
   customerName: string; 
-  customerPhone: string;
+  customerPhone: string; 
   customerEmail: string; 
   sport: string; 
   price: number; 
-  status: string;
+  status: string; 
   payment_status: string; 
   refund_amount: number | null; 
   source: "app" | "manual";
@@ -68,12 +70,14 @@ type ManualBlockType = { id: string; date: string; slot: string; slotId: string;
 type OwnerType = { id: string; name: string; turf_name: string }
 type TurfType = { id: string; name: string; price: number; booking_window_days: number; pending_booking_window_days: number | null }
 
-// --- HELPER COMPONENT ---
+// --- HELPER COMPONENT (Updated) ---
 function DashboardNotice({ message, isError = false }: { message: string, isError?: boolean }) {
+  if (!isError) return <UniversalLoader />; // Use Universal Loader for loading state
+  
   return (
     <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-6">
-      {isError ? <AlertTriangle className="h-12 w-12 text-destructive mb-4" /> : <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />}
-      <h3 className="text-xl font-semibold mb-2">{isError ? "An Error Occurred" : "Loading Dashboard"}</h3>
+      <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+      <h3 className="text-xl font-semibold mb-2">An Error Occurred</h3>
       <p className="text-muted-foreground max-w-md">{message}</p>
     </div>
   )
@@ -142,7 +146,6 @@ export default function OwnerDashboardPage() {
     sport: "football", slotId: "", comments: ""
   })
   
-  // UPDATED: Added 'comments' to block state
   const [newBlock, setNewBlock] = useState({ 
     slotId: "", 
     sport: "football",
@@ -188,66 +191,74 @@ export default function OwnerDashboardPage() {
     initializeDashboard()
   }, [router])
 
-  // --- 2. FETCH BOOKINGS & BLOCKS ---
-  const fetchBookingsForDate = useCallback(async () => {
-    if (isInitializing || !turf || timeSlots.length === 0) return
-    setIsBookingsLoading(true)
-    const formattedDate = format(selectedDate, "yyyy-MM-dd")
+// --- 2. FETCH BOOKINGS & BLOCKS (FIXED) ---
+  const fetchBookingsForDate = useCallback(async () => {
+    if (isInitializing || !turf || timeSlots.length === 0) return
+    setIsBookingsLoading(true)
+    const formattedDate = format(selectedDate, "yyyy-MM-dd")
 
-    try {
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("*, users (name, phone, email)")
-        .eq("turf_id", turf.id)
-        .eq("date", formattedDate)
+    try {
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("*, users (name, phone, email)")
+        .eq("turf_id", turf.id)
+        .eq("date", formattedDate)
+        // --- FIX: Filter out cancelled bookings here ---
+        .neq("status", "cancelled") 
+        // Optional: If you want to see cancelled bookings in the list but not have them block slots,
+        // you can remove the line above, but you must update the isSlotTaken logic below.
+        // For dashboard clarity, it's usually better to fetch them but filter them in JS.
+        // BUT for availability correctness, let's fetch EVERYTHING and handle status in the map loop.
+        
+      if (error) throw error
 
-      if (error) throw error
+      const newBookings: BookingType[] = []
+      const newBlocks: ManualBlockType[] = []
 
-      const newBookings: BookingType[] = []
-      const newBlocks: ManualBlockType[] = []
+      data.forEach((b) => {
+        // Skip processing if status is cancelled (just to be safe)
+        if (b.status === 'cancelled') return;
 
-      data.forEach((b) => {
-        b.slot.forEach((slotId: string) => {
-          const timeSlot = timeSlots.find(ts => ts.id === slotId)
-          const displayTime = timeSlot ? timeSlot.time : "Unknown"
-          const endTime = timeSlot ? timeSlot.endTime : "00:00"
-          
-          if (b.status === "blocked") {
-            // Note: We use the 'notes' field as the reason for display
-            newBlocks.push({
-              id: b.id, date: b.date, slot: displayTime, slotId: slotId, reason: b.notes || b.sport,
-            })
-            // Add to Bookings list too so it's visible there
-            newBookings.push({
-                id: b.id, date: b.date, slot: displayTime, slotId: slotId, endTime: endTime,
-                customerName: `Blocked: ${b.notes || b.sport}`,
-                customerPhone: "N/A", customerEmail: "N/A",
-                sport: b.sport, price: 0, status: "blocked",
-                payment_status: "n/a", refund_amount: null, source: "manual",
-                notes: b.notes
-            })
-          } else {
-            newBookings.push({
-              id: b.id, date: b.date, slot: displayTime, slotId: slotId, endTime: endTime,
-              customerName: b.users?.name || b.name || "Walk-in Customer", 
-              customerPhone: b.users?.phone || b.phone || "N/A",
-              customerEmail: b.users?.email || b.email || "N/A",
-              sport: b.sport, price: b.amount, status: b.status,
-              payment_status: b.payment_status, refund_amount: b.refund_amount,
-              source: b.user_id ? "app" : "manual",
-              notes: b.notes
-            })
-          }
-        })
-      })
-      setBookings(newBookings)
-      setManualBlocks(newBlocks)
-    } catch (error: any) {
-      console.error("Fetch bookings error:", error);
-    } finally {
-      setIsBookingsLoading(false)
-    }
-  }, [selectedDate, turf, timeSlots, isInitializing]);
+        b.slot.forEach((slotId: string) => {
+          const timeSlot = timeSlots.find(ts => ts.id === slotId)
+          const displayTime = timeSlot ? timeSlot.time : "Unknown"
+          const endTime = timeSlot ? timeSlot.endTime : "00:00"
+          
+          if (b.status === "blocked") {
+            newBlocks.push({
+              id: b.id, date: b.date, slot: displayTime, slotId: slotId, reason: b.notes || b.sport,
+            })
+            // Also add to bookings so it shows in the list view
+            newBookings.push({
+                id: b.id, date: b.date, slot: displayTime, slotId: slotId, endTime: endTime,
+                customerName: `Blocked: ${b.notes || b.sport}`,
+                customerPhone: "N/A", customerEmail: "N/A",
+                sport: b.sport, price: 0, status: "blocked",
+                payment_status: "n/a", refund_amount: null, source: "manual",
+                notes: b.notes
+            })
+          } else {
+            newBookings.push({
+              id: b.id, date: b.date, slot: displayTime, slotId: slotId, endTime: endTime,
+              customerName: b.users?.name || b.name || "Walk-in Customer", 
+              customerPhone: b.users?.phone || b.phone || "N/A",
+              customerEmail: b.users?.email || b.email || "N/A",
+              sport: b.sport, price: b.amount, status: b.status,
+              payment_status: b.payment_status, refund_amount: b.refund_amount,
+              source: b.user_id ? "app" : "manual",
+              notes: b.notes
+            })
+          }
+        })
+      })
+      setBookings(newBookings)
+      setManualBlocks(newBlocks)
+    } catch (error: any) {
+      console.error("Fetch bookings error:", error);
+    } finally {
+      setIsBookingsLoading(false)
+    }
+  }, [selectedDate, turf, timeSlots, isInitializing]);
 
   useEffect(() => { fetchBookingsForDate() }, [fetchBookingsForDate]);
 
@@ -339,7 +350,6 @@ export default function OwnerDashboardPage() {
       
       let finalReason = newBlock.reason;
       if (newBlock.reason === "Others") finalReason = newBlock.otherReason;
-      // Combine reason and comments for the notes field
       const fullNotes = newBlock.comments ? `${finalReason} - ${newBlock.comments}` : finalReason;
 
       try {
@@ -350,14 +360,14 @@ export default function OwnerDashboardPage() {
               status: "blocked", 
               payment_status: "n/a", 
               amount: 0, 
-              sport: newBlock.sport, // <--- SAVING THE SPORT
-              notes: fullNotes,      // <--- SAVING REASON + COMMENTS
+              sport: newBlock.sport,
+              notes: fullNotes,
               user_id: null 
           });
           if(error) throw error;
           setIsBlockModalOpen(false); 
           alert("Slot blocked.");
-          setNewBlock({ slotId: "", sport: "football", reason: "", otherReason: "", comments: "" }); // Reset
+          setNewBlock({ slotId: "", sport: "football", reason: "", otherReason: "", comments: "" }); 
           fetchBookingsForDate();
       } catch(e: any) { console.error(e); alert("Error: " + e.message); } finally { setIsSubmitting(false); }
   };
@@ -388,9 +398,14 @@ export default function OwnerDashboardPage() {
   if (pageError) return <DashboardNotice message={pageError} isError />;
   if (!turf) return <UnverifiedDashboard ownerName={owner?.name} />;
 
-  // Common UI State Logic
-  const isSlotTaken = (slotId: string) => bookings.some(b => b.slotId === slotId && b.status !== 'cancelled' && b.status !== 'completed') || manualBlocks.some(b => b.slotId === slotId);
-  const isSlotInPast = (endTime: string) => {
+  // Updated Helper
+const isSlotTaken = (slotId: string) => {
+  return bookings.some(b => 
+    b.slotId === slotId && 
+    b.status !== 'cancelled' // Explicit check
+  ) || manualBlocks.some(b => b.slotId === slotId);
+}; 
+const isSlotInPast = (endTime: string) => {
       const [h, m] = endTime.split(':').map(Number);
       return isPast(new Date(selectedDate).setHours(h, m, 0, 0));
   };
@@ -464,11 +479,11 @@ export default function OwnerDashboardPage() {
         {/* Tabs Area */}
         <Card className="col-span-1 md:col-span-3 bg-card border-border rounded-xl">
           <CardHeader>
-             <CardTitle className="hidden md:block text-lg">Schedule for {format(selectedDate, "EEEE, MMMM d, yyyy")}</CardTitle>
-             <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
-               <PopoverTrigger asChild><Button variant="ghost" className="md:hidden justify-start pl-0 text-lg font-semibold">{format(selectedDate, "PPP")} <CalendarIcon className="ml-2 h-4 w-4" /></Button></PopoverTrigger>
-               <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={selectedDate} onSelect={d => { if(d) setSelectedDate(d); setIsCalendarOpen(false); }} /></PopoverContent>
-             </Popover>
+              <CardTitle className="hidden md:block text-lg">Schedule for {format(selectedDate, "EEEE, MMMM d, yyyy")}</CardTitle>
+              <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                <PopoverTrigger asChild><Button variant="ghost" className="md:hidden justify-start pl-0 text-lg font-semibold">{format(selectedDate, "PPP")} <CalendarIcon className="ml-2 h-4 w-4" /></Button></PopoverTrigger>
+                <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={selectedDate} onSelect={d => { if(d) setSelectedDate(d); setIsCalendarOpen(false); }} /></PopoverContent>
+              </Popover>
           </CardHeader>
           <CardContent>
             <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -479,69 +494,69 @@ export default function OwnerDashboardPage() {
 
               {/* BOOKINGS TAB */}
               <TabsContent value="bookings" className="space-y-6">
-                 <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center">
                     <h3 className="text-lg font-medium">Bookings</h3>
                     <Button onClick={() => setIsBookingModalOpen(true)} className="gap-2"><Plus className="h-4 w-4"/> Add Booking</Button>
-                 </div>
-                 {isBookingsLoading ? <Loader2 className="animate-spin mx-auto"/> : groupedBookings.length === 0 ? <p className="text-center text-muted-foreground py-8">No bookings or blocks for this date.</p> : (
+                  </div>
+                  {isBookingsLoading ? <UniversalLoader /> : groupedBookings.length === 0 ? <p className="text-center text-muted-foreground py-8">No bookings or blocks for this date.</p> : (
                     <div className="space-y-4">
-                       {groupedBookings.map(group => {
+                        {groupedBookings.map(group => {
                           const isPastBooking = isSlotInPast(group.endTime);
                           const isBlocked = group.status === 'blocked';
                           return (
                             <Card key={group.id} className={cn("bg-secondary border-border", (group.status === 'cancelled' || isPastBooking) && "opacity-60", isBlocked && "bg-destructive/5 border-destructive/20")}>
-                               <CardContent className="p-4">
+                                <CardContent className="p-4">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                     <div className="flex items-start gap-4">
-                                        <div className={cn("p-3 rounded-full hidden sm:flex", isBlocked ? "bg-destructive/10" : "bg-primary/10")}>
-                                           {group.status === 'cancelled' ? <XCircle className="h-5 w-5 text-red-500" /> : isBlocked ? <Lock className="h-5 w-5 text-destructive" /> : <Clock className="h-5 w-5 text-primary" />}
-                                        </div>
-                                        <div>
-                                           <div className="flex items-center gap-2">
-                                              <h4 className={cn("font-medium", group.status === 'cancelled' && "line-through")}>{group.startTime} - {group.endTime}</h4>
-                                              <Badge variant={group.source === "app" ? "default" : "outline"} className="text-xs">{group.source === "app" ? "App" : "Manual"}</Badge>
-                                           </div>
-                                           <p className="text-sm text-muted-foreground font-medium">{group.customerName}</p>
-                                           {group.notes && <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1"><StickyNote className="h-3 w-3"/> {group.notes}</div>}
-                                           {!isBlocked && <p className="text-sm text-muted-foreground mt-1">{group.sport} • {group.customerPhone} • ₹{group.price}</p>}
-                                           
-                                           <div className="flex flex-wrap gap-2 mt-2">
-                                              <Badge variant="secondary" className={cn("capitalize", 
-                                                group.status === 'confirmed' ? 'bg-green-600 text-white' : 
-                                                group.status === 'pending' ? 'bg-yellow-500 text-black' : 
-                                                group.status === 'cancelled' ? 'bg-red-600 text-white' : 
-                                                isBlocked ? 'bg-destructive text-white' : '')}>{group.status}</Badge>
-                                              {!isBlocked && <Badge variant="secondary" className={cn("capitalize", group.payment_status === 'paid' ? 'bg-green-600 text-white' : 'bg-red-500 text-white')}>Payment: {group.payment_status}</Badge>}
-                                           </div>
-                                        </div>
-                                     </div>
-                                     <div className="flex items-center gap-2 ml-auto">
-                                        {(group.status === 'pending' || group.status === 'confirmed') && (
-                                           <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => handleCancelBooking(group.id)} disabled={isPastBooking}><Trash2 className="h-4 w-4"/></Button>
-                                        )}
-                                        {isBlocked && (
-                                           <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 gap-2" onClick={() => handleDeleteBlock(group.id)}><Trash2 className="h-4 w-4"/> Unblock</Button>
-                                        )}
-                                        {group.status === 'completed' && <Button variant="ghost" size="icon" className="text-green-600" disabled><CheckCircle className="h-4 w-4"/></Button>}
-                                     </div>
+                                      <div className="flex items-start gap-4">
+                                          <div className={cn("p-3 rounded-full hidden sm:flex", isBlocked ? "bg-destructive/10" : "bg-primary/10")}>
+                                            {group.status === 'cancelled' ? <XCircle className="h-5 w-5 text-red-500" /> : isBlocked ? <Lock className="h-5 w-5 text-destructive" /> : <Clock className="h-5 w-5 text-primary" />}
+                                          </div>
+                                          <div>
+                                            <div className="flex items-center gap-2">
+                                                <h4 className={cn("font-medium", group.status === 'cancelled' && "line-through")}>{group.startTime} - {group.endTime}</h4>
+                                                <Badge variant={group.source === "app" ? "default" : "outline"} className="text-xs">{group.source === "app" ? "App" : "Manual"}</Badge>
+                                            </div>
+                                            <p className="text-sm text-muted-foreground font-medium">{group.customerName}</p>
+                                            {group.notes && <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1"><StickyNote className="h-3 w-3"/> {group.notes}</div>}
+                                            {!isBlocked && <p className="text-sm text-muted-foreground mt-1">{group.sport} • {group.customerPhone} • ₹{group.price}</p>}
+                                            
+                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                <Badge variant="secondary" className={cn("capitalize", 
+                                                  group.status === 'confirmed' ? 'bg-green-600 text-white' : 
+                                                  group.status === 'pending' ? 'bg-yellow-500 text-black' : 
+                                                  group.status === 'cancelled' ? 'bg-red-600 text-white' : 
+                                                  isBlocked ? 'bg-destructive text-white' : '')}>{group.status}</Badge>
+                                                {!isBlocked && <Badge variant="secondary" className={cn("capitalize", group.payment_status === 'paid' ? 'bg-green-600 text-white' : 'bg-red-500 text-white')}>Payment: {group.payment_status}</Badge>}
+                                            </div>
+                                          </div>
+                                      </div>
+                                      <div className="flex items-center gap-2 ml-auto">
+                                          {(group.status === 'pending' || group.status === 'confirmed') && (
+                                            <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => handleCancelBooking(group.id)} disabled={isPastBooking}><Trash2 className="h-4 w-4"/></Button>
+                                          )}
+                                          {isBlocked && (
+                                            <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 gap-2" onClick={() => handleDeleteBlock(group.id)}><Trash2 className="h-4 w-4"/> Unblock</Button>
+                                          )}
+                                          {group.status === 'completed' && <Button variant="ghost" size="icon" className="text-green-600" disabled><CheckCircle className="h-4 w-4"/></Button>}
+                                      </div>
                                   </div>
-                               </CardContent>
+                                </CardContent>
                             </Card>
                           )
-                       })}
+                        })}
                     </div>
-                 )}
+                  )}
               </TabsContent>
 
               {/* AVAILABILITY TAB */}
               <TabsContent value="availability" className="space-y-6">
-                 <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center">
                     <h3 className="text-lg font-medium">Slot Management</h3>
                     <Button onClick={() => setIsBlockModalOpen(true)} className="gap-2"><Plus className="h-4 w-4"/> Block Slot</Button>
-                 </div>
-                 {isBookingsLoading ? <Loader2 className="animate-spin mx-auto"/> : (
+                  </div>
+                  {isBookingsLoading ? <UniversalLoader /> : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
-                       {timeSlots.map(slot => {
+                        {timeSlots.map(slot => {
                           const booking = bookings.find(b => b.slotId === slot.id && b.status !== 'cancelled') || bookings.find(b => b.slotId === slot.id);
                           const block = manualBlocks.find(b => b.slotId === slot.id);
                           const isAvailable = !booking && !block;
@@ -552,39 +567,39 @@ export default function OwnerDashboardPage() {
                           let borderColor = "";
                           
                           if (block) {
-                             statusText = `Blocked: ${block.reason || 'Offline'}`;
-                             bgColor = "bg-destructive/10 border-destructive/30";
+                              statusText = `Blocked: ${block.reason || 'Offline'}`;
+                              bgColor = "bg-destructive/10 border-destructive/30";
                           } else if (booking) {
-                             statusText = booking.status === 'completed' ? `Completed: ${booking.customerName}` : `Booked: ${booking.customerName}`;
-                             bgColor = booking.status === 'completed' ? "bg-green-700/10 border-green-700/30" : "bg-primary/10 border-primary/30";
+                              statusText = booking.status === 'completed' ? `Completed: ${booking.customerName}` : `Booked: ${booking.customerName}`;
+                              bgColor = booking.status === 'completed' ? "bg-green-700/10 border-green-700/30" : "bg-primary/10 border-primary/30";
                           } else if (isAvailable && isPastSlot) {
-                             bgColor = "bg-secondary/20 opacity-60 cursor-not-allowed";
+                              bgColor = "bg-secondary/20 opacity-60 cursor-not-allowed";
                           } else if (isAvailable) {
-                             bgColor = "bg-secondary/50 cursor-pointer hover:border-primary";
+                              bgColor = "bg-secondary/50 cursor-pointer hover:border-primary";
                           }
 
                           return (
-                             <Card 
-                               key={slot.id} 
-                               onClick={() => isAvailable && !isPastSlot ? (setNewBlock({ slotId: slot.id, sport: "football", reason: "", otherReason: "", comments: "" }), setIsBlockModalOpen(true)) : undefined}
-                               className={cn("border", bgColor, borderColor)}
-                             >
-                               <CardContent className="p-3 sm:p-4">
+                              <Card 
+                                key={slot.id} 
+                                onClick={() => isAvailable && !isPastSlot ? (setNewBlock({ slotId: slot.id, sport: "football", reason: "", otherReason: "", comments: "" }), setIsBlockModalOpen(true)) : undefined}
+                                className={cn("border", bgColor, borderColor)}
+                              >
+                                <CardContent className="p-3 sm:p-4">
                                   <div className="flex justify-between items-center">
-                                     <div>
+                                      <div>
                                         <p className="font-medium">{slot.time}</p>
                                         <p className="text-sm text-muted-foreground truncate w-24 sm:w-auto">{statusText}</p>
-                                     </div>
-                                     {block && (
+                                      </div>
+                                      {block && (
                                         <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 -mr-2" onClick={(e) => { e.stopPropagation(); handleDeleteBlock(block.id); }}><Trash2 className="h-4 w-4"/></Button>
-                                     )}
+                                      )}
                                   </div>
-                               </CardContent>
-                             </Card>
+                                </CardContent>
+                              </Card>
                           )
-                       })}
+                        })}
                     </div>
-                 )}
+                  )}
               </TabsContent>
             </Tabs>
           </CardContent>
@@ -595,24 +610,25 @@ export default function OwnerDashboardPage() {
       {/* 1. Add Booking Dialog (Simplified) */}
       <Dialog open={isBookingModalOpen} onOpenChange={setIsBookingModalOpen}>
         <DialogContent className="sm:max-w-md bg-card border-border">
-           <DialogHeader><DialogTitle>Add Manual Booking</DialogTitle></DialogHeader>
-           <div className="space-y-4 py-4">
+            {isSubmitting && <UniversalLoader />}
+            <DialogHeader><DialogTitle>Add Manual Booking</DialogTitle></DialogHeader>
+            <div className="space-y-4 py-4">
               <div className="space-y-2"><Label>Sport</Label><Select value={newBooking.sport} onValueChange={v => setNewBooking({...newBooking, sport: v})}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="football">Football</SelectItem><SelectItem value="cricket">Cricket</SelectItem><SelectItem value="badminton">Badminton</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>Slot</Label><Select value={newBooking.slotId} onValueChange={v => setNewBooking({...newBooking, slotId: v})}><SelectTrigger><SelectValue placeholder="Select Slot"/></SelectTrigger><SelectContent>{timeSlots.map(s => <SelectItem key={s.id} value={s.id} disabled={isSlotTaken(s.id) || isSlotInPast(s.endTime)}>{s.time} {isSlotTaken(s.id) ? '(Booked)' : ''}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>Comments</Label><Input placeholder="e.g. Walk-in, Paid UPI" value={newBooking.comments} onChange={e => setNewBooking({...newBooking, comments: e.target.value})}/></div>
-              <Button onClick={handleAddBooking} className="w-full" disabled={isSubmitting}>{isSubmitting ? <Loader2 className="animate-spin"/> : "Confirm Booking"}</Button>
-           </div>
+              <Button onClick={handleAddBooking} className="w-full" disabled={isSubmitting}>Confirm Booking</Button>
+            </div>
         </DialogContent>
       </Dialog>
 
-      {/* 2. Block Slot Dialog (Updated with Sport & Comments) */}
+      {/* 2. Block Slot Dialog */}
       <Dialog open={isBlockModalOpen} onOpenChange={setIsBlockModalOpen}>
-         <DialogContent className="sm:max-w-md bg-card border-border">
+          <DialogContent className="sm:max-w-md bg-card border-border">
+            {isSubmitting && <UniversalLoader />}
             <DialogHeader><DialogTitle>Block Slot</DialogTitle></DialogHeader>
             <div className="space-y-4 py-4">
-               
-               {/* Sport Field */}
-               <div className="space-y-2">
+                
+                <div className="space-y-2">
                   <Label>Sport Category</Label>
                   <Select value={newBlock.sport} onValueChange={v => setNewBlock({...newBlock, sport: v})}>
                     <SelectTrigger><SelectValue/></SelectTrigger>
@@ -623,17 +639,17 @@ export default function OwnerDashboardPage() {
                       <SelectItem value="Maintenance">Maintenance</SelectItem>
                     </SelectContent>
                   </Select>
-               </div>
+                </div>
 
-               <div className="space-y-2">
+                <div className="space-y-2">
                   <Label>Slot</Label>
                   <Select value={newBlock.slotId} onValueChange={v => setNewBlock({...newBlock, slotId: v})} disabled={!!newBlock.slotId && !timeSlots.find(s => s.id === newBlock.slotId)?.time}>
                     <SelectTrigger><SelectValue placeholder="Select Slot"/></SelectTrigger>
                     <SelectContent>{timeSlots.map(s => <SelectItem key={s.id} value={s.id} disabled={isSlotTaken(s.id) || isSlotInPast(s.endTime)}>{s.time}</SelectItem>)}</SelectContent>
                   </Select>
-               </div>
+                </div>
 
-               <div className="space-y-2">
+                <div className="space-y-2">
                   <Label>Reason</Label>
                   <Select value={newBlock.reason || ''} onValueChange={v => setNewBlock({...newBlock, reason: v})}>
                     <SelectTrigger><SelectValue placeholder="Select Reason"/></SelectTrigger>
@@ -644,35 +660,34 @@ export default function OwnerDashboardPage() {
                       <SelectItem value="Others">Others</SelectItem>
                     </SelectContent>
                   </Select>
-               </div>
+                </div>
 
-               {newBlock.reason === "Others" && (
-                 <div className="space-y-2">
-                   <Label>Specify Reason</Label>
-                   <Input value={newBlock.otherReason} onChange={e => setNewBlock({...newBlock, otherReason: e.target.value})} placeholder="e.g. Tournament" />
-                 </div>
-               )}
+                {newBlock.reason === "Others" && (
+                  <div className="space-y-2">
+                    <Label>Specify Reason</Label>
+                    <Input value={newBlock.otherReason} onChange={e => setNewBlock({...newBlock, otherReason: e.target.value})} placeholder="e.g. Tournament" />
+                  </div>
+                )}
 
-               {/* Comments Field */}
-               <div className="space-y-2">
+                <div className="space-y-2">
                   <Label>Additional Comments</Label>
                   <Input value={newBlock.comments} onChange={e => setNewBlock({...newBlock, comments: e.target.value})} placeholder="Optional details..." />
-               </div>
+                </div>
 
-               <Button onClick={handleAddBlock} className="w-full" disabled={isSubmitting}>Block Slot</Button>
+                <Button onClick={handleAddBlock} className="w-full" disabled={isSubmitting}>Block Slot</Button>
             </div>
-         </DialogContent>
+          </DialogContent>
       </Dialog>
 
       {/* 3. Settings Dialog */}
       <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
-         <DialogContent className="sm:max-w-md bg-card border-border">
+          <DialogContent className="sm:max-w-md bg-card border-border">
             <DialogHeader><DialogTitle>Settings</DialogTitle></DialogHeader>
             <div className="py-4 space-y-4">
-               <div className="space-y-2"><Label>Request Booking Window (Days)</Label><Input type="number" value={requestedDays} onChange={e => setRequestedDays(e.target.value)}/></div>
-               <Button onClick={handleRequestWindowChange} className="w-full">Submit Request</Button>
+                <div className="space-y-2"><Label>Request Booking Window (Days)</Label><Input type="number" value={requestedDays} onChange={e => setRequestedDays(e.target.value)}/></div>
+                <Button onClick={handleRequestWindowChange} className="w-full">Submit Request</Button>
             </div>
-         </DialogContent>
+          </DialogContent>
       </Dialog>
 
     </div>

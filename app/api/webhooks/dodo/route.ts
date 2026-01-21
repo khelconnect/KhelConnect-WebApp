@@ -1,63 +1,102 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Ensure this route is treated as dynamic (important for webhooks)
-//export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'; // Ensure dynamic execution
 
 export async function POST(req: Request) {
   try {
-    // 1. Check Environment Variables
+    // 1. Configuration Check
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error("❌ CRITICAL: Missing Supabase Service Role Key or URL in environment variables.");
-      return NextResponse.json({ error: "Server Configuration Error: Missing DB Keys" }, { status: 500 });
+      console.error("❌ CRITICAL: Missing Supabase Config.");
+      return NextResponse.json({ error: "Server Config Error" }, { status: 500 });
     }
 
-    // 2. Parse Payload
-    const event = await req.json();
-    console.log(`Webhook Received: ${event.type}`);
-
-    // 3. Initialize Admin Client
+    // 2. Initialize Admin Client (Bypasses RLS)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 4. Handle 'payment.succeeded'
-    if (event.type === "payment.succeeded") {
-      const { metadata, payment_id } = event.data;
-      const bookingId = metadata?.booking_id;
+    // 3. Parse Event
+    const event = await req.json();
+    const { type, data } = event;
+    const bookingId = data?.metadata?.booking_id;
 
-      // Handle missing booking_id (Common in dashboard 'Test' events)
-      if (!bookingId) {
-        console.warn("⚠️ Webhook Warning: No booking_id in metadata. If this was a manual test from Dodo Dashboard, this is expected.");
-        // We return 200 OK so Dodo stops retrying this "bad" test event
-        return NextResponse.json({ received: true, message: "Ignored: No booking_id" }); 
-      }
+    console.log(`🔔 Webhook received: ${type} | Booking ID: ${bookingId || 'N/A'}`);
 
-      console.log(`Processing payment for Booking ID: ${bookingId}`);
+    // If there is no booking ID (e.g., a test event without metadata), ignore safely
+    if (!bookingId) {
+      return NextResponse.json({ received: true, message: "Ignored: No booking_id found" });
+    }
 
-      // 5. Update Database
-      const { error } = await supabaseAdmin
-        .from("bookings")
-        .update({
+    // 4. Handle Status Cases
+    let updateData = {};
+
+    switch (type) {
+      case "payment.succeeded":
+        console.log(`✅ Payment Succeeded for ${bookingId}`);
+        updateData = {
           payment_status: "paid",
-          status: "confirmed", 
-          // payment_transaction_id: payment_id 
-        })
-        .eq("id", bookingId);
+          status: "confirmed", // Confirms the slot
+          // transaction_id: data.payment_id // Optional: Save gateway ID if you have a column for it
+        };
+        break;
 
-      if (error) {
-        console.error("❌ Database Update Failed:", error.message);
-        return NextResponse.json({ error: "Database update failed: " + error.message }, { status: 500 });
-      }
+      case "payment.processing":
+        console.log(`⏳ Payment Processing for ${bookingId}`);
+        updateData = {
+          payment_status: "processing"
+          // We keep status as 'pending' so the slot isn't confirmed yet, but isn't free either
+        };
+        break;
 
-      console.log(`✅ Booking ${bookingId} confirmed successfully.`);
+      case "payment.failed":
+        console.log(`❌ Payment Failed for ${bookingId}`);
+        updateData = {
+          payment_status: "failed",
+          // CRITICAL: We keep status 'pending' (not 'cancelled') to allow Retry from Profile Page
+          // The 5-minute timer on the frontend/cron will handle cancellation if they don't retry.
+          status: "pending" 
+        };
+        break;
+
+      case "refund.succeeded":
+        console.log(`💸 Refund Succeeded for ${bookingId}`);
+        updateData = {
+          payment_status: "refunded",
+          status: "cancelled", // Free up the slot immediately
+          refund_amount: data.amount // Assuming data.amount contains the refunded value
+        };
+        break;
+
+      case "dispute.opened":
+        console.warn(`⚠️ Dispute Opened for ${bookingId}`);
+        updateData = {
+          payment_status: "dispute_open"
+          // You might want to keep the slot confirmed until the dispute is resolved
+        };
+        break;
+
+      default:
+        console.log(`ℹ️ Unhandled event type: ${type}`);
+        return NextResponse.json({ received: true, message: "Unhandled event type" });
+    }
+
+    // 5. Execute Database Update
+    const { error } = await supabaseAdmin
+      .from("bookings")
+      .update(updateData)
+      .eq("id", bookingId);
+
+    if (error) {
+      console.error("❌ DB Update Error:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ received: true });
 
   } catch (error: any) {
     console.error("❌ Webhook Fatal Error:", error.message);
-    return NextResponse.json({ error: "Webhook processing failed: " + error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

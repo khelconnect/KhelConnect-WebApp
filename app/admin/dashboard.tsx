@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Card, CardContent } from "@/components/ui/card";
-import { BarChart2, CalendarDays, CreditCard, Users, Loader2 } from "lucide-react";
+import { BarChart2, CalendarDays, CreditCard, Users } from "lucide-react";
+// --- IMPORT UNIVERSAL LOADER ---
+import { UniversalLoader } from "@/components/ui/universal-loader";
 
 export default function DashboardTab() {
   const [stats, setStats] = useState({
@@ -30,7 +32,8 @@ export default function DashboardTab() {
     fetchStats();
   }, []);
 
-  if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin" /></div>;
+  // --- REPLACED LOADER ---
+  if (loading) return <UniversalLoader />;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
