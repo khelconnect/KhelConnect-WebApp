@@ -24,7 +24,7 @@ import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { BookingSuccessModal } from "@/components/BookingSuccessModal";
 import { SlidingActionCard } from "@/components/SlidingActionCard";
 import { MobileSlideCard } from "@/components/MobileSlideCard";
-import { BookingTicket } from "@/components/BookingTicket"; // New Import
+import { BookingTicket } from "@/components/BookingTicket";
 
 export const dynamic = "force-dynamic";
 
@@ -40,11 +40,12 @@ type BookingDetail = {
   rating: number | null
   review: string | null
   created_at: string | null
+  sport: string // Added sport field here
   turfs: {
-    name: string
-    location: string
-    image: string
-  }
+    name: string;
+    location: string;
+    image: string;
+  };
 }
 
 type TimeSlot = {
@@ -155,7 +156,7 @@ export default function UserProfilePage() {
       supabase.from("users").select("*").eq("id", user.id).single(),
       supabase.from("time_slots").select("id, start_time, end_time").order('start_time'),
       supabase.from("bookings")
-        .select(`id, date, slot, amount, advance_paid, status, payment_status, rating, review, created_at, turfs ( name, location, image )`) 
+        .select(`id, date, slot, amount, advance_paid, status, payment_status, rating, review, created_at, sport, turfs ( name, location, image )`) // Added 'sport' to query
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
     ]);
@@ -223,6 +224,20 @@ export default function UserProfilePage() {
     return startDateTime;
   };
 
+  const getBookingEndDateTime = (booking: BookingDetail) => {
+    const timeRange = getFormattedTimeRange(booking.slot);
+    if(timeRange === "Unknown Time") return new Date(booking.date);
+    const [_, endTimeStr] = timeRange.split(" - ");
+    if (!endTimeStr) return new Date(booking.date);
+    const [time, period] = endTimeStr.trim().split(" ");
+    let [hours, minutes] = time.split(":").map(Number);
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    const endDateTime = new Date(booking.date);
+    endDateTime.setHours(hours, minutes, 0, 0);
+    return endDateTime;
+  };
+
   // --- HANDLERS ---
   const handleLogout = async () => { await supabase.auth.signOut(); clearUser(); router.push("/"); }
   
@@ -268,9 +283,12 @@ export default function UserProfilePage() {
       } 
   };
 
+  // Explicit Cancel Handler for Payment Tab
   const handleExplicitCancel = useCallback(async (bookingId: string) => {
+      // Optimistic Update
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'cancelled', payment_status: 'failed' } : b));
       try {
+          // Free up slot immediately
           await supabase.from("bookings").update({ status: "cancelled", payment_status: "failed" }).eq("id", bookingId);
       } catch (error) {
           console.error("Cancellation Error:", error);
@@ -283,28 +301,34 @@ export default function UserProfilePage() {
   // --- FILTERED & SORTED LISTS ---
   const sortedBookings = useMemo(() => [...bookings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [bookings]);
   
+  // 1. UPCOMING: Status is Confirmed/Paid AND Start Time > Current Time
   const upcomingBookings = useMemo(() => sortedBookings.filter(b => { 
       if (b.status === 'cancelled' || b.status === 'blocked' || (b.status !== 'confirmed' && b.payment_status !== 'paid')) return false; 
       const startDateTime = getBookingStartDateTime(b); 
       return isFuture(startDateTime); 
   }).sort((a, b) => getBookingStartDateTime(a).getTime() - getBookingStartDateTime(b).getTime()), [sortedBookings, timeSlots]);
 
+  // 2. HISTORY: Completed OR Cancelled OR Failed OR (Confirmed AND Start Time <= Current Time)
   const historyBookings = useMemo(() => sortedBookings.filter(b => { 
       if (b.status === 'completed' || b.status === 'cancelled' || b.payment_status === 'failed') return true; 
       if (b.status === 'confirmed' || b.payment_status === 'paid') { 
           const startDateTime = getBookingStartDateTime(b); 
           return isPast(startDateTime); 
       } 
+      // Capture expired pending if they haven't been wiped yet (though filtered out of upcoming)
       if (b.payment_status === 'pending' && b.created_at && isPast(addMinutes(parseISO(b.created_at), 5))) return true;
+
       return false; 
   }), [sortedBookings, timeSlots]);
 
+  // 3. PENDING
   const pendingPayments = useMemo(() => bookings.filter(b => (b.payment_status === 'pending' || b.payment_status === 'failed') && b.status !== 'cancelled' && b.status !== 'confirmed' && b.status !== 'completed'), [bookings]);
   
   const nearestBooking = upcomingBookings.length > 0 ? upcomingBookings[0] : null;
   const rateableBooking = useMemo(() => sortedBookings.find(b => b.status === 'completed' && !b.rating), [sortedBookings]);
   const completedCount = useMemo(() => bookings.filter(b => b.status === 'completed').length, [bookings]);
 
+  // --- FILTERED HISTORY FOR DISPLAY ---
   const filteredHistory = useMemo(() => {
       if (historyFilter === 'all') return historyBookings;
       if (historyFilter === 'completed') return historyBookings.filter(b => b.status === 'completed' || b.status === 'confirmed');
@@ -556,6 +580,7 @@ export default function UserProfilePage() {
       )}
 
       {/* --- MODALS --- */}
+      
       {/* 1. Ticket Modal */}
       <Dialog open={!!ticketBooking} onOpenChange={(open) => !open && setTicketBooking(null)}>
         <DialogContent className="w-[90vw] max-w-md rounded-3xl p-0 overflow-hidden bg-transparent border-none shadow-none sm:max-w-md">
@@ -568,6 +593,7 @@ export default function UserProfilePage() {
                     payment_status: ticketBooking.payment_status,
                     amount: ticketBooking.amount,
                     advance_paid: ticketBooking.advance_paid,
+                    sport: ticketBooking.sport, // Passed to ticket
                     turfs: ticketBooking.turfs
                 }}
                 formattedTimeRange={getFormattedTimeRange(ticketBooking.slot)}
@@ -629,7 +655,15 @@ function BookingCard({ booking, timeRange, onViewTicket, onViewInfo, isNearest }
   return (
     <Card className={cn("bg-card border-border rounded-2xl overflow-hidden hover:shadow-md transition-all", isNearest && "border-green-500/50 shadow-lg shadow-green-500/10 relative overflow-visible", (isCancelled || isFailed) && "opacity-60")}>
       {isNearest && (<div className="absolute -top-3 left-4 bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-sm z-10 uppercase tracking-wide">Up Next</div>)}
-      <div className="flex flex-col sm:flex-row"><div className="sm:w-36 h-32 sm:h-auto relative bg-secondary"><img src={booking.turfs?.image || "/placeholder.svg"} className={cn("absolute inset-0 w-full h-full object-cover", (isCancelled || isFailed) && "grayscale")} /></div><div className="p-5 flex-1 flex flex-col justify-between"><div><div className="flex justify-between items-start mb-2"><div><h3 className="font-bold text-lg leading-tight">{booking.turfs?.name}</h3><div className="flex items-center text-muted-foreground text-sm mt-1"><MapPin className="h-3 w-3 mr-1" /> {booking.turfs?.location}</div></div><Badge variant={isCancelled || isFailed ? "destructive" : "secondary"} className="capitalize">{isFailed ? "Payment Failed" : booking.status}</Badge></div><div className="grid grid-cols-2 gap-4 my-3"><div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-primary" /><span>{format(new Date(booking.date), "EEE, MMM d")}</span></div><div className="flex items-center gap-2 text-sm"><Clock className="h-4 w-4 text-primary" /><span>{timeRange}</span></div></div>
+      <div className="flex flex-col sm:flex-row"><div className="sm:w-36 h-32 sm:h-auto relative bg-secondary"><img src={booking.turfs?.image || "/placeholder.svg"} className={cn("absolute inset-0 w-full h-full object-cover", (isCancelled || isFailed) && "grayscale")} /></div><div className="p-5 flex-1 flex flex-col justify-between"><div><div className="flex justify-between items-start mb-2"><div><h3 className="font-bold text-lg leading-tight">{booking.turfs?.name}</h3><div className="flex items-center text-muted-foreground text-sm mt-1"><MapPin className="h-3 w-3 mr-1" /> {booking.turfs?.location}</div></div><Badge variant={isCancelled || isFailed ? "destructive" : "secondary"} className="capitalize">{isFailed ? "Payment Failed" : booking.status}</Badge></div>
+      
+      {/* ADDED SPORT INFO HERE */}
+      <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider mb-2 flex items-center gap-1">
+          {/* You can optionally add a generic sport icon here or use the same helper if imported */}
+          <span>{booking.sport}</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 my-3"><div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-primary" /><span>{format(new Date(booking.date), "EEE, MMM d")}</span></div><div className="flex items-center gap-2 text-sm"><Clock className="h-4 w-4 text-primary" /><span>{timeRange}</span></div></div>
       
       {(isCancelled || isFailed) && booking.created_at && (
           <div className="mt-2 text-xs text-muted-foreground border-t border-dashed pt-2 flex items-center gap-1">
