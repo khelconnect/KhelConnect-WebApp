@@ -14,15 +14,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing Booking ID" }, { status: 400 });
     }
 
-    // 1. Configuration Check (Using your CURRENT env variable name)
+    // 1. Configuration Check
+    // UPDATED: Now matches your Production Environment Variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    
-    // WARNING: Currently using NEXT_PUBLIC_SERVICE_ROLE_KEY based on your setup.
-    // Ideally, this should be renamed to SUPABASE_SERVICE_ROLE_KEY later for security.
-    const supabaseServiceKey = process.env.NEXT_PUBLIC_SERVICE_ROLE_KEY;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error("❌ [VERIFY API] CRITICAL: Missing Config. URL or Key is undefined.");
+      console.error("❌ [VERIFY API] CRITICAL: Missing SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL.");
       return NextResponse.json({ error: "Server Configuration Error: Missing Keys" }, { status: 500 });
     }
 
