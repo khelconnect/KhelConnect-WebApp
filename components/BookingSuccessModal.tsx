@@ -8,12 +8,11 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Calendar, Clock, MapPin, Loader2, XCircle, Wallet, Ticket } from "lucide-react";
+import { CheckCircle, Calendar, Clock, MapPin, XCircle, Wallet, Ticket } from "lucide-react";
 import { format } from "date-fns";
 import { UniversalLoader } from "@/components/ui/universal-loader";
 
@@ -27,7 +26,9 @@ export function BookingSuccessModal({ onSuccess }: BookingSuccessModalProps) {
   
   // Params from Payment Gateway
   const bookingId = searchParams.get("booking_id");
-  const paymentStatus = searchParams.get("payment_status"); // 'succeeded' or 'failed'
+  
+  // --- FIX: READ 'status' PARAMETER TOO ---
+  const paymentStatus = searchParams.get("payment_status") || searchParams.get("status"); 
 
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -37,6 +38,8 @@ export function BookingSuccessModal({ onSuccess }: BookingSuccessModalProps) {
   useEffect(() => {
     // Only activate if we have a booking_id in the URL
     if (bookingId) {
+      console.log("🟢 [MODAL] Detected Booking ID:", bookingId);
+      console.log("🟢 [MODAL] Payment Status from URL:", paymentStatus);
       setIsOpen(true);
       verifyBooking(bookingId);
     }
@@ -45,7 +48,28 @@ export function BookingSuccessModal({ onSuccess }: BookingSuccessModalProps) {
   const verifyBooking = async (id: string) => {
     setLoading(true);
     try {
-      // 1. Fetch current status
+      // 1. If success, trigger server-side verification (Bypasses RLS)
+      if (paymentStatus === 'succeeded') {
+         console.log("🚀 [MODAL] Payment Succeeded. Calling Verify API...");
+         
+         const response = await fetch('/api/payment/verify', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ bookingId: id })
+         });
+         
+         const result = await response.json();
+         console.log("📩 [MODAL] Verify API Response:", result);
+         
+         if (!response.ok) {
+             console.error("❌ [MODAL] API Error:", result.error);
+             // Don't throw immediately, try fetching to see if it was already updated
+         }
+      } else {
+         console.warn("⚠️ [MODAL] Payment Status is NOT 'succeeded'. Skipping Verify API.");
+      }
+
+      // 2. Fetch the fresh booking data (Now confirmed)
       const { data, error } = await supabase
         .from("bookings")
         .select("*, turfs(name, location)")
@@ -54,26 +78,22 @@ export function BookingSuccessModal({ onSuccess }: BookingSuccessModalProps) {
 
       if (error || !data) throw new Error("Booking not found");
 
-      // 2. Handle Logic based on Gateway Status
-      if (paymentStatus === 'succeeded') {
-        // If still pending in DB, update it (Optimistic update)
-        if (data.status !== 'confirmed' || data.payment_status !== 'paid') {
-           await supabase
-            .from("bookings")
-            .update({ status: 'confirmed', payment_status: 'paid' })
-            .eq("id", id);
-           
-           // Update local state to reflect confirmation
-           data.status = 'confirmed';
-           data.payment_status = 'paid';
-        }
-      } else if (paymentStatus === 'failed') {
+      console.log("📋 [MODAL] Final Booking Data Loaded:", {
+          id: data.id,
+          status: data.status,
+          payment_status: data.payment_status,
+          amount: data.amount,
+          advance_paid: data.advance_paid
+      });
+
+      // 3. Handle Failed status explicitly from URL
+      if (paymentStatus === 'failed') {
          setError("Payment transaction failed.");
       }
 
       setBooking(data);
     } catch (err: any) {
-      console.error(err);
+      console.error("❌ [MODAL] Logic Error:", err);
       setError(err.message || "Verification failed");
     } finally {
       setLoading(false);
