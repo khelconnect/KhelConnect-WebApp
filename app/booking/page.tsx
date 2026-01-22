@@ -4,7 +4,6 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-// 1. ADDED: Time utilities
 import { format, startOfDay, isBefore, isSameDay, addDays, isAfter, differenceInSeconds, parseISO, addMinutes } from "date-fns";
 import { supabase } from "@/lib/supabaseClient";
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
@@ -27,7 +26,6 @@ interface Slot {
   end_time: string;
   period: string;
   isBooked: boolean;
-  // 2. ADDED: Tracking data for pending slots
   pendingCreatedAt?: string | null; 
 }
 
@@ -38,6 +36,7 @@ interface Turf {
   location: string;
   rating: number;
   price: number;
+  advance_price: number; 
   booking_window_days: number;
 }
 
@@ -54,11 +53,9 @@ export default function BookingPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
-  // Params
   const turfId = searchParams.get("turf") || "";
   const sport = searchParams.get("sport") || "football";
   
-  // Reschedule Params
   const rescheduleId = searchParams.get("reschedule_id");
   const slotCountParam = searchParams.get("slot_count");
   const requiredSlotCount = slotCountParam ? parseInt(slotCountParam, 10) : 0;
@@ -71,11 +68,8 @@ export default function BookingPage() {
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [slotPrices, setSlotPrices] = useState<{ [slotId: string]: number }>({});
   const [turfInfo, setTurfInfo] = useState<Turf | null>(null);
-  
-  // 3. ADDED: Real-time ticker for animations
   const [now, setNow] = useState(new Date());
 
-  // UI State
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -84,26 +78,22 @@ export default function BookingPage() {
 
   const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
 
-  // --- 4. ADDED: Ticker Effect ---
   useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 1000); // Update every second
+    const interval = setInterval(() => setNow(new Date()), 1000); 
     return () => clearInterval(interval);
   }, []);
 
-  // --- 1. INITIALIZATION & RESTORE STATE ---
+  // --- 1. INITIALIZATION ---
   useEffect(() => {
     const init = async () => {
-      // A. Check Auth
       const { data: { user } } = await supabase.auth.getUser();
       if (user) setCurrentUser(user);
 
-      // B. Fetch Turf Info
       if (turfId) {
         const { data } = await supabase.from("turfs").select("*").eq("id", turfId).single();
         if (data) setTurfInfo(data);
       }
 
-      // C. Restore Pending Booking
       const pendingData = localStorage.getItem("khelconnect_pending_booking");
       if (pendingData) {
         const parsed = JSON.parse(pendingData);
@@ -117,7 +107,7 @@ export default function BookingPage() {
     init();
   }, [turfId, sport]);
 
-  // --- 2. FETCH SLOTS & PRICING ---
+  // --- 2. FETCH SLOTS ---
   const fetchSlotsAndPrices = async () => {
     if (!turfId || !formattedDate || !selectedDate || !turfInfo) return;
     setLoading(true);
@@ -125,43 +115,27 @@ export default function BookingPage() {
     try {
       const [allSlotsResult, bookingsResult, pricingResult] = await Promise.all([
         supabase.from("time_slots").select("*").order("start_time", { ascending: true }),
-        
-        // Fetch bookings to check status
         supabase.from("bookings")
           .select("slot, status, created_at")
           .eq("turf_id", turfId)
           .eq("date", formattedDate)
           .eq("sport", sport)
           .in("status", ["confirmed", "pending"]), 
-
-        supabase.from("turf_prices").select("*")
-          .eq("turf_id", turfId).eq("sport", sport)
+        supabase.from("turf_prices").select("*").eq("turf_id", turfId).eq("sport", sport)
       ]);
 
       if (allSlotsResult.error) throw allSlotsResult.error;
 
-      // Map bookings to slots
       const activeBookings = bookingsResult.data || [];
-      
       const slotsWithStatus = (allSlotsResult.data || []).map((slot) => {
-        // Find if this slot is part of any active booking
         const booking = activeBookings.find(b => b.slot.includes(slot.id));
-        
-        // It is "hard booked" if status is confirmed
         const isConfirmed = booking?.status === 'confirmed';
-        
-        // It is "pending" if status is pending (we will check time expiry in Render)
         const pendingCreatedAt = booking?.status === 'pending' ? booking.created_at : null;
 
-        return {
-          ...slot,
-          isBooked: isConfirmed, // Base booked state (confirmed only)
-          pendingCreatedAt: pendingCreatedAt // Store timestamp for dynamic calculation
-        };
+        return { ...slot, isBooked: isConfirmed, pendingCreatedAt: pendingCreatedAt };
       });
       setSlots(slotsWithStatus);
 
-      // Pricing Logic
       const dayOfWeek = selectedDate.getDay();
       const priceMap: Record<string, number> = {};
       
@@ -202,8 +176,7 @@ export default function BookingPage() {
     }
   }, [turfInfo, formattedDate, turfId, sport]);
 
-
-  // --- 3. SLOT SELECTION LOGIC ---
+  // --- 3. SLOT TOGGLE ---
   const handleSlotToggle = (id: string) => {
     const clickedSlotIndex = slots.findIndex((s) => s.id === id);
     if (clickedSlotIndex === -1) return;
@@ -211,67 +184,47 @@ export default function BookingPage() {
     const isSelected = selectedSlots.includes(id);
 
     if (isSelected) {
-      const currentIndices = selectedSlots
-        .map((sId) => slots.findIndex((s) => s.id === sId))
-        .sort((a, b) => a - b);
-      const minIdx = currentIndices[0];
-      const maxIdx = currentIndices[currentIndices.length - 1];
-
-      if (clickedSlotIndex === minIdx || clickedSlotIndex === maxIdx) {
+      const currentIndices = selectedSlots.map((sId) => slots.findIndex((s) => s.id === sId)).sort((a, b) => a - b);
+      if (clickedSlotIndex === currentIndices[0] || clickedSlotIndex === currentIndices[currentIndices.length - 1]) {
         setSelectedSlots((prev) => prev.filter((s) => s !== id));
       } else {
-        alert("Please deselect slots from the ends to keep the time block continuous.");
+        alert("Please deselect slots from the ends.");
       }
     } else {
-      if (selectedSlots.length === 0) {
-        setSelectedSlots([id]);
-        return;
-      }
-
-      const currentIndices = selectedSlots
-        .map((sId) => slots.findIndex((s) => s.id === sId))
-        .sort((a, b) => a - b);
-      const minIdx = currentIndices[0];
-      const maxIdx = currentIndices[currentIndices.length - 1];
-
-      const isAdjacent = clickedSlotIndex === minIdx - 1 || clickedSlotIndex === maxIdx + 1;
+      if (selectedSlots.length === 0) { setSelectedSlots([id]); return; }
+      const currentIndices = selectedSlots.map((sId) => slots.findIndex((s) => s.id === sId)).sort((a, b) => a - b);
+      const isAdjacent = clickedSlotIndex === currentIndices[0] - 1 || clickedSlotIndex === currentIndices[currentIndices.length - 1] + 1;
 
       if (isAdjacent) {
         if (isRescheduleMode && selectedSlots.length >= requiredSlotCount) {
-          alert(`You can only select exactly ${requiredSlotCount} slot(s) for this reschedule.`);
+          alert(`Select exactly ${requiredSlotCount} slot(s).`);
           return;
         }
         setSelectedSlots((prev) => [...prev, id]);
       } else {
-        if (confirm("Non-consecutive slot selected. Start a new selection?")) {
-          setSelectedSlots([id]);
-        }
+        if (confirm("Start new selection?")) setSelectedSlots([id]);
       }
     }
   };
 
-  // --- 4. REDIRECT TO LOGIN ---
   const handleLoginRedirect = () => {
-    const bookingState = {
-      turfId,
-      sport,
-      date: selectedDate,
-      slots: selectedSlots
-    };
+    const bookingState = { turfId, sport, date: selectedDate, slots: selectedSlots };
     localStorage.setItem("khelconnect_pending_booking", JSON.stringify(bookingState));
     router.push("/login");
   };
 
-  // --- 5. BOOKING CONFIRMATION ---
+  // --- 5. BOOKING & PAYMENT LOGIC ---
   const handleConfirmBooking = async () => {
     if (!selectedDate || selectedSlots.length === 0 || !turfInfo || !formattedDate) return;
+    if (!currentUser) { setShowLoginModal(true); return; }
 
-    if (!currentUser) {
-      setShowLoginModal(true);
-      return;
-    }
-
+    // --- LOGIC FIX: FLAT ADVANCE ---
     const totalAmount = selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo.price), 0);
+    const advanceAmount = turfInfo.advance_price || 0; // Fixed flat fee (e.g. 500)
+    
+    // If total is somehow less than advance (unlikely but possible), charge total. Otherwise charge advance.
+    const payNowAmount = totalAmount < advanceAmount ? totalAmount : advanceAmount;
+
     setIsSubmitting(true);
 
     try {
@@ -303,21 +256,23 @@ export default function BookingPage() {
             user_id: currentUser.id, 
             payment_status: "pending",
             status: "pending",
-            amount: totalAmount,
+            amount: totalAmount, // Full Value
+            advance_paid: payNowAmount // Online Payment Value
           })
           .select("id")
           .single();
 
         if (error) throw error;
 
-        let paymentUrl = "";
+        // Payment Gateway Payload
         const paymentPayload = {
             bookingId: bookingData.id,
-            amount: totalAmount,
+            amount: payNowAmount, // Send only the ADVANCE to Dodo
             customerName: currentUser.user_metadata?.full_name || "Valued Player",
             customerEmail: currentUser.email,
         };
 
+        let paymentUrl = "";
         if (Capacitor.isNativePlatform()) {
             const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://khelconnect.in";
             const response = await CapacitorHttp.post({
@@ -325,7 +280,6 @@ export default function BookingPage() {
                 headers: { "Content-Type": "application/json" },
                 data: paymentPayload
             });
-
             if (response.status !== 200) throw new Error("Native Payment API Error");
             paymentUrl = response.data.paymentUrl;
         } else {
@@ -338,7 +292,6 @@ export default function BookingPage() {
             if (!response.ok) throw new Error(result.error);
             paymentUrl = result.paymentUrl;
         }
-
         window.location.href = paymentUrl;
       }
     } catch (error: any) {
@@ -361,15 +314,18 @@ export default function BookingPage() {
     .filter(Boolean)
     .sort((a, b) => a!.start_time.localeCompare(b!.start_time));
 
-  // --- CALCULATIONS FOR FOOTER ---
+  // --- DISPLAY CALCULATIONS ---
   const totalAmount = selectedSlots.reduce((sum, id) => sum + (slotPrices[id] || turfInfo?.price || 0), 0);
-  const totalSlots = selectedSlots.length;
+  const advanceAmount = turfInfo?.advance_price || 0;
+  
+  // Logic: Pay Now is Fixed Advance, unless total is smaller
+  const payNowDisplay = totalAmount < advanceAmount ? totalAmount : advanceAmount;
+  const payAtVenue = totalAmount - payNowDisplay;
 
   return (
     <main className="container mx-auto px-4 sm:px-6 py-8 sm:py-12 pb-32">
       {isSubmitting && <UniversalLoader />}
       
-      {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2 text-foreground/80 hover:text-foreground">
           <Link href={isRescheduleMode ? "/my-bookings" : `/turfs?sport=${sport}`}>
@@ -378,11 +334,8 @@ export default function BookingPage() {
           </Link>
         </Button>
       </div>
-      <h1 className="text-3xl font-bold mb-8">
-        {isRescheduleMode ? "Reschedule Your Slot" : "Book Your Slot"}
-      </h1>
+      <h1 className="text-3xl font-bold mb-8">{isRescheduleMode ? "Reschedule Your Slot" : "Book Your Slot"}</h1>
 
-      {/* Turf Info Card */}
       {turfInfo && (
         <Card className="mb-10 overflow-hidden shadow-lg bg-card border-border rounded-3xl">
           <div className="md:flex h-full">
@@ -401,7 +354,6 @@ export default function BookingPage() {
         </Card>
       )}
 
-      {/* Date & Selected Slots */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
         <Card className="bg-card border-border rounded-3xl shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-lg"><CalendarIcon className="h-5 w-5 text-primary" /> Select Date</CardTitle></CardHeader>
@@ -409,11 +361,33 @@ export default function BookingPage() {
         </Card>
         <Card className="bg-card border-border rounded-3xl shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-lg"><Clock className="h-5 w-5 text-primary" /> Selected Slots</CardTitle></CardHeader>
-          <CardContent>{selectedSlots.length > 0 ? (<div className="bg-primary/5 border border-primary/20 p-4 rounded-xl"><div className="flex flex-wrap gap-2 mb-3">{selectedObjs.map((s) => (<Badge key={s!.id} className="bg-primary text-primary-foreground px-3 py-1.5 text-sm rounded-lg shadow-sm">{s!.start_time} - {s!.end_time}</Badge>))}</div><div className="flex justify-between items-center pt-2 border-t border-primary/10"><p className="text-sm font-medium text-muted-foreground">Total: <span className="text-foreground">{selectedSlots.length} slot{selectedSlots.length > 1 ? 's' : ''}</span></p><p className="text-lg font-bold text-primary">₹{totalAmount}</p></div></div>) : (<div className="bg-secondary/30 p-6 rounded-xl text-center border-2 border-dashed border-border flex flex-col items-center justify-center h-[120px]"><Clock className="h-8 w-8 text-muted-foreground/50 mb-2" /><p className="text-muted-foreground font-medium">No slots selected yet</p></div>)}</CardContent>
+          <CardContent>
+            {selectedSlots.length > 0 ? (
+                <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl">
+                    <div className="flex flex-wrap gap-2 mb-3">{selectedObjs.map((s) => (<Badge key={s!.id} className="bg-primary text-primary-foreground px-3 py-1.5 text-sm rounded-lg shadow-sm">{s!.start_time} - {s!.end_time}</Badge>))}</div>
+                    
+                    {/* COST BREAKDOWN */}
+                    <div className="flex justify-between items-center pt-2 border-t border-primary/10">
+                        <div className="flex flex-col">
+                            <p className="text-sm font-medium text-muted-foreground">Booking Advance</p>
+                            <p className="text-xs text-muted-foreground">Fixed booking fee</p>
+                        </div>
+                        <p className="text-lg font-bold text-green-600">₹{payNowDisplay}</p>
+                    </div>
+                    {payAtVenue > 0 && (
+                        <div className="flex justify-between items-center mt-1">
+                            <p className="text-sm font-medium text-muted-foreground">Pay at Venue</p>
+                            <p className="text-sm font-bold text-foreground">₹{payAtVenue}</p>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="bg-secondary/30 p-6 rounded-xl text-center border-2 border-dashed border-border flex flex-col items-center justify-center h-[120px]"><Clock className="h-8 w-8 text-muted-foreground/50 mb-2" /><p className="text-muted-foreground font-medium">No slots selected yet</p></div>
+            )}
+          </CardContent>
         </Card>
       </div>
 
-      {/* Slots Grid */}
       <Card className="mb-10 bg-card border-border rounded-3xl shadow-sm">
         <CardHeader className="pb-4 border-b border-border/50">
           <div className="flex items-center justify-between">
@@ -443,25 +417,21 @@ export default function BookingPage() {
                         isPast = slotDate < new Date();
                       }
                       
-                      // 5. DYNAMIC ROTATIONAL BORDER LOGIC
                       let isBlockedByPending = false;
                       let progressPercentage = 0;
 
                       if (slot.pendingCreatedAt) {
-                         const secondsElapsed = differenceInSeconds(now, parseISO(slot.pendingCreatedAt));
-                         const totalDuration = 5 * 60; // 5 minutes in seconds
-                         
-                         if (secondsElapsed < totalDuration) {
-                             isBlockedByPending = true;
-                             // Calculate percentage: 0s = 0%, 300s = 100%
-                             progressPercentage = (secondsElapsed / totalDuration) * 100;
-                         } else {
-                             // Timer expired locally! Slot is free!
-                             isBlockedByPending = false;
-                         }
+                          const secondsElapsed = differenceInSeconds(now, parseISO(slot.pendingCreatedAt));
+                          const totalDuration = 5 * 60; 
+                          
+                          if (secondsElapsed < totalDuration) {
+                              isBlockedByPending = true;
+                              progressPercentage = (secondsElapsed / totalDuration) * 100;
+                          } else {
+                              isBlockedByPending = false;
+                          }
                       }
 
-                      // Final "Booked" State: Confirmed OR (Pending AND Not Expired)
                       const isActuallyBooked = slot.isBooked || isBlockedByPending;
                       const price = slotPrices[slot.id] ?? turfInfo?.price;
 
@@ -473,29 +443,19 @@ export default function BookingPage() {
                             "h-auto py-3 px-2 flex flex-col items-center justify-center rounded-xl transition-all border-2 relative overflow-hidden",
                             (isActuallyBooked && !isBlockedByPending) && "opacity-40 cursor-not-allowed bg-secondary border-transparent shadow-none",
                             isPast && "opacity-40 cursor-not-allowed bg-secondary border-transparent shadow-none",
-                            
-                            // 6. APPLY DYNAMIC BORDER FOR PENDING
-                            // We use inline styles for the rotation, but base styles here
                             isBlockedByPending && "cursor-not-allowed bg-secondary/10 border-transparent",
-
                             !isActuallyBooked && !isPast && !isSelected && "hover:border-primary/50 hover:bg-secondary/50",
                             isSelected && "ring-0 border-primary bg-primary shadow-lg shadow-primary/20 scale-[1.02]"
                           )}
-                          // 7. INLINE STYLE FOR CONIC GRADIENT
                           style={isBlockedByPending ? {
-                              background: `
-                                linear-gradient(var(--card), var(--card)) padding-box,
-                                conic-gradient(#22c55e ${progressPercentage}%, transparent 0) border-box
-                              `,
+                              background: `linear-gradient(var(--card), var(--card)) padding-box, conic-gradient(#22c55e ${progressPercentage}%, transparent 0) border-box`,
                               border: '2px solid transparent'
                           } : undefined}
                           disabled={isActuallyBooked || isPast}
                           onClick={(e) => { e.currentTarget.blur(); handleSlotToggle(slot.id); }}
                         >
                           <span className="text-sm font-bold">{slot.start_time}</span>
-                          <span className={cn("text-xs mt-1 font-medium", isSelected ? "text-primary-foreground/90" : "text-muted-foreground")}>
-                            {isBlockedByPending ? "Held" : `₹${price}`}
-                          </span>
+                          <span className={cn("text-xs mt-1 font-medium", isSelected ? "text-primary-foreground/90" : "text-muted-foreground")}>{isBlockedByPending ? "Held" : `₹${price}`}</span>
                         </Button>
                       );
                     })}
@@ -507,17 +467,28 @@ export default function BookingPage() {
         </CardContent>
       </Card>
 
-      {/* Footer */}
       <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-xl border-t border-border z-40 pb-safe">
         <div className="container mx-auto max-w-6xl px-4 py-4">
           <div className="flex items-center justify-between gap-4">
-            <div className="flex flex-col"><p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-0.5">{totalSlots} Slot{totalSlots !== 1 ? 's' : ''} Selected</p><div className="flex items-baseline gap-2"><span className="text-2xl font-bold text-foreground">₹{totalAmount}</span>{totalSlots > 0 && (<span className="text-xs text-muted-foreground hidden sm:inline-block">(₹{Math.round(totalAmount / totalSlots)} / slot avg)</span>)}</div></div>
-            <Button size="lg" className="rounded-xl px-8 sm:px-12 font-bold text-lg shadow-xl shadow-primary/25 transition-all hover:scale-[1.02] active:scale-[0.98]" disabled={selectedSlots.length === 0 || isSubmitting || (isRescheduleMode && selectedSlots.length !== requiredSlotCount)} onClick={handleConfirmBooking}>{isRescheduleMode ? "Confirm Reschedule" : (<span className="flex items-center gap-2">Book Now <ArrowRight className="h-5 w-5" /></span>)}</Button>
+            <div className="flex flex-col">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-0.5">
+                    {selectedSlots.length} Slot{selectedSlots.length !== 1 ? 's' : ''} Selected
+                </p>
+                <div className="flex flex-col">
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-bold text-green-600">₹{payNowDisplay}</span>
+                        <span className="text-xs font-medium text-green-600 bg-green-100 dark:bg-green-900 px-1.5 py-0.5 rounded-md">Pay Now</span>
+                    </div>
+                    {payAtVenue > 0 && (
+                        <p className="text-xs text-muted-foreground">+ ₹{payAtVenue} at venue (Total: ₹{totalAmount})</p>
+                    )}
+                </div>
+            </div>
+            <Button size="lg" className="rounded-xl px-8 sm:px-12 font-bold text-lg shadow-xl shadow-primary/25 transition-all hover:scale-[1.02] active:scale-[0.98]" disabled={selectedSlots.length === 0 || isSubmitting || (isRescheduleMode && selectedSlots.length !== requiredSlotCount)} onClick={handleConfirmBooking}>{isRescheduleMode ? "Confirm Reschedule" : (<span className="flex items-center gap-2">Pay & Book <ArrowRight className="h-5 w-5" /></span>)}</Button>
           </div>
         </div>
       </div>
 
-      {/* --- MODALS --- */}
       <Dialog open={showLoginModal} onOpenChange={setShowLoginModal}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle className="flex flex-col items-center gap-4 pt-4"><div className="p-4 bg-primary/10 rounded-full"><LogIn className="h-8 w-8 text-primary" /></div><span className="text-2xl">Login Required</span></DialogTitle><DialogDescription className="text-center text-base pt-2">You need to be logged in to book a turf. <br/>Don't worry, we've saved your slot selection!</DialogDescription></DialogHeader><div className="flex flex-col gap-3 pt-6"><Button size="lg" className="w-full rounded-xl" onClick={handleLoginRedirect}>Log In / Sign Up</Button><Button variant="ghost" onClick={() => setShowLoginModal(false)}>Cancel</Button></div></DialogContent></Dialog>
       <Dialog open={showRescheduleSuccessModal} onOpenChange={() => router.push("/my-bookings")}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle className="flex flex-col items-center gap-4 pt-4"><CheckCircle className="h-12 w-12 text-green-500" /><span className="text-2xl">Rescheduled!</span></DialogTitle><DialogDescription className="text-center text-base">Your booking has been successfully updated to the new time slot.</DialogDescription></DialogHeader><DialogFooter className="pt-4"><Button className="w-full" onClick={() => router.push("/my-bookings")}>View My Bookings</Button></DialogFooter></DialogContent></Dialog>
     </main>

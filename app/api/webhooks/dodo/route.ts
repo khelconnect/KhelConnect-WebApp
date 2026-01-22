@@ -60,12 +60,12 @@ export async function POST(req: Request) {
         };
         break;
 
-      case "refund.succeeded":
+case "refund.succeeded":
         console.log(`💸 Refund Succeeded for ${bookingId}`);
         updateData = {
           payment_status: "refunded",
           status: "cancelled", // Free up the slot immediately
-          refund_amount: data.amount // Assuming data.amount contains the refunded value
+          // refund_amount: data.amount // <--- REMOVED to prevent DB error if column missing
         };
         break;
 
