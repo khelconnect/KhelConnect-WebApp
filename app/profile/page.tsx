@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils"
 import { UniversalLoader } from "@/components/ui/universal-loader"
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 // --- IMPORTS ---
-import { BookingSuccessModal } from "@/components/BookingSuccessModal";
 import { SlidingActionCard } from "@/components/SlidingActionCard";
 import { MobileSlideCard } from "@/components/MobileSlideCard";
 import { BookingTicket } from "@/components/BookingTicket";
@@ -40,7 +39,7 @@ type BookingDetail = {
   rating: number | null
   review: string | null
   created_at: string | null
-  sport: string // Added sport field here
+  sport: string 
   turfs: {
     name: string;
     location: string;
@@ -156,7 +155,7 @@ export default function UserProfilePage() {
       supabase.from("users").select("*").eq("id", user.id).single(),
       supabase.from("time_slots").select("id, start_time, end_time").order('start_time'),
       supabase.from("bookings")
-        .select(`id, date, slot, amount, advance_paid, status, payment_status, rating, review, created_at, sport, turfs ( name, location, image )`) // Added 'sport' to query
+        .select(`id, date, slot, amount, advance_paid, status, payment_status, rating, review, created_at, sport, turfs ( name, location, image )`) 
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
     ]);
@@ -178,7 +177,21 @@ export default function UserProfilePage() {
 
   useEffect(() => { setLoading(true); fetchUserData(); }, [fetchUserData]);
 
-  // --- 2. GLOBAL EXPIRY CHECK ---
+  // --- 2. PAYMENT SUCCESS REDIRECT HANDLER ---
+  useEffect(() => {
+    const bookingId = searchParams.get('booking_id');
+    if (bookingId && bookings.length > 0) {
+      const successfulBooking = bookings.find(b => b.id === bookingId);
+      if (successfulBooking) {
+        // Open Ticket Modal directly
+        setTicketBooking(successfulBooking);
+        // Clean URL to prevent re-triggering
+        window.history.replaceState({}, '', '/profile');
+      }
+    }
+  }, [searchParams, bookings]);
+
+  // --- 3. GLOBAL EXPIRY CHECK ---
   const checkAndExpireBookings = useCallback(async () => {
     const expiredCandidates = bookings.filter(b => 
       (b.payment_status === 'pending' || b.payment_status === 'failed') &&
@@ -283,12 +296,9 @@ export default function UserProfilePage() {
       } 
   };
 
-  // Explicit Cancel Handler for Payment Tab
   const handleExplicitCancel = useCallback(async (bookingId: string) => {
-      // Optimistic Update
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: 'cancelled', payment_status: 'failed' } : b));
       try {
-          // Free up slot immediately
           await supabase.from("bookings").update({ status: "cancelled", payment_status: "failed" }).eq("id", bookingId);
       } catch (error) {
           console.error("Cancellation Error:", error);
@@ -301,34 +311,29 @@ export default function UserProfilePage() {
   // --- FILTERED & SORTED LISTS ---
   const sortedBookings = useMemo(() => [...bookings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [bookings]);
   
-  // 1. UPCOMING: Status is Confirmed/Paid AND Start Time > Current Time
   const upcomingBookings = useMemo(() => sortedBookings.filter(b => { 
       if (b.status === 'cancelled' || b.status === 'blocked' || (b.status !== 'confirmed' && b.payment_status !== 'paid')) return false; 
       const startDateTime = getBookingStartDateTime(b); 
       return isFuture(startDateTime); 
   }).sort((a, b) => getBookingStartDateTime(a).getTime() - getBookingStartDateTime(b).getTime()), [sortedBookings, timeSlots]);
 
-  // 2. HISTORY: Completed OR Cancelled OR Failed OR (Confirmed AND Start Time <= Current Time)
   const historyBookings = useMemo(() => sortedBookings.filter(b => { 
       if (b.status === 'completed' || b.status === 'cancelled' || b.payment_status === 'failed') return true; 
       if (b.status === 'confirmed' || b.payment_status === 'paid') { 
           const startDateTime = getBookingStartDateTime(b); 
           return isPast(startDateTime); 
       } 
-      // Capture expired pending if they haven't been wiped yet (though filtered out of upcoming)
       if (b.payment_status === 'pending' && b.created_at && isPast(addMinutes(parseISO(b.created_at), 5))) return true;
 
       return false; 
   }), [sortedBookings, timeSlots]);
 
-  // 3. PENDING
   const pendingPayments = useMemo(() => bookings.filter(b => (b.payment_status === 'pending' || b.payment_status === 'failed') && b.status !== 'cancelled' && b.status !== 'confirmed' && b.status !== 'completed'), [bookings]);
   
   const nearestBooking = upcomingBookings.length > 0 ? upcomingBookings[0] : null;
   const rateableBooking = useMemo(() => sortedBookings.find(b => b.status === 'completed' && !b.rating), [sortedBookings]);
   const completedCount = useMemo(() => bookings.filter(b => b.status === 'completed').length, [bookings]);
 
-  // --- FILTERED HISTORY FOR DISPLAY ---
   const filteredHistory = useMemo(() => {
       if (historyFilter === 'all') return historyBookings;
       if (historyFilter === 'completed') return historyBookings.filter(b => b.status === 'completed' || b.status === 'confirmed');
@@ -378,7 +383,7 @@ export default function UserProfilePage() {
     <main className="container mx-auto px-4 py-8 max-w-6xl pb-24 md:pb-8">
       {isProcessingPayment && <UniversalLoader />}
 
-      <BookingSuccessModal onSuccess={fetchUserData} />
+      {/* Removed BookingSuccessModal */}
 
       <div className="flex flex-col md:flex-row gap-6 mb-8 items-start">
         {/* Profile Card */}

@@ -74,18 +74,44 @@ const RealisticBarcode = ({ id }: { id: string }) => {
 };
 
 export function BookingTicket({ booking, formattedTimeRange, userName, onDownload, onShare }: BookingTicketProps) {
-  const isCompleted = booking.status === 'completed';
+  
+  // 1. Check if strictly completed in DB (Show Red Stamp)
+  const isCompletedStatus = booking.status === 'completed';
+
+  // 2. Check if time has passed (Show Ripped/Archived look, but NO Stamp)
+  const isExpired = useMemo(() => {
+      if (booking.status !== 'confirmed') return false; 
+      try {
+          const parts = formattedTimeRange.split("-");
+          if (parts.length < 2) return false;
+
+          const endTimeString = parts[1].trim(); 
+          const [time, period] = endTimeString.split(" ");
+          let [hours, minutes] = time.split(":").map(Number);
+
+          if (period === "PM" && hours !== 12) hours += 12;
+          if (period === "AM" && hours === 12) hours = 0;
+
+          const bookingDate = new Date(booking.date);
+          bookingDate.setHours(hours, minutes, 0, 0);
+
+          return new Date() > bookingDate;
+      } catch (e) {
+          return false;
+      }
+  }, [booking.date, booking.status, formattedTimeRange]);
+
+  // 3. Determine Visual State: Ticket is "Archived" if Completed OR Expired
+  const isVisualArchived = isCompletedStatus || isExpired;
 
   // --- MASKS & CLIP PATHS ---
 
   // 1. Used Ticket: Ripped Edge
   const rippedEdgeClipPath = "polygon(0 0, 100% 0, 100% calc(100% - 10px), 98% 100%, 96% calc(100% - 10px), 94% 100%, 92% calc(100% - 10px), 90% 100%, 88% calc(100% - 10px), 86% 100%, 84% calc(100% - 10px), 82% 100%, 80% calc(100% - 10px), 78% 100%, 76% calc(100% - 10px), 74% 100%, 72% calc(100% - 10px), 70% 100%, 68% calc(100% - 10px), 66% 100%, 64% calc(100% - 10px), 62% 100%, 60% calc(100% - 10px), 58% 100%, 56% calc(100% - 10px), 54% 100%, 52% calc(100% - 10px), 50% 100%, 48% calc(100% - 10px), 46% 100%, 44% calc(100% - 10px), 42% 100%, 40% calc(100% - 10px), 38% 100%, 36% calc(100% - 10px), 34% 100%, 32% calc(100% - 10px), 30% 100%, 28% calc(100% - 10px), 26% 100%, 24% calc(100% - 10px), 22% 100%, 20% calc(100% - 10px), 18% 100%, 16% calc(100% - 10px), 14% 100%, 12% calc(100% - 10px), 10% 100%, 8% calc(100% - 10px), 6% 100%, 4% calc(100% - 10px), 2% 100%, 0 calc(100% - 10px))";
 
-  // 2. Active Ticket Masks (For Transparent Holes)
-  // Mask Bottom Corners (For Header)
+  // 2. Masks (For Transparent Holes)
   const maskBottomCorners = "radial-gradient(circle 10px at 0 100%, #0000 10px, #000 10.5px) 0 100% / 51% 100% no-repeat, radial-gradient(circle 10px at 100% 100%, #0000 10px, #000 10.5px) 100% 100% / 51% 100% no-repeat, linear-gradient(#000, #000) 0 0 / 100% calc(100% - 10px) no-repeat";
   
-  // Mask Top & Bottom Corners (For Middle Body)
   const maskBothCorners = 
     "radial-gradient(circle 10px at 0 0, #0000 10px, #000 10.5px) 0 0 / 51% 51% no-repeat, " +
     "radial-gradient(circle 10px at 100% 0, #0000 10px, #000 10.5px) 100% 0 / 51% 51% no-repeat, " +
@@ -93,7 +119,6 @@ export function BookingTicket({ booking, formattedTimeRange, userName, onDownloa
     "radial-gradient(circle 10px at 100% 100%, #0000 10px, #000 10.5px) 100% 100% / 51% 51% no-repeat, " +
     "linear-gradient(#000, #000) center / 100% calc(100% - 20px) no-repeat";
 
-  // Mask Top Corners (For Barcode Footer)
   const maskTopCorners = "radial-gradient(circle 10px at 0 0, #0000 10px, #000 10.5px) 0 0 / 51% 100% no-repeat, radial-gradient(circle 10px at 100% 0, #0000 10px, #000 10.5px) 100% 0 / 51% 100% no-repeat, linear-gradient(#000, #000) 0 10px / 100% 100% no-repeat";
 
   return (
@@ -102,25 +127,20 @@ export function BookingTicket({ booking, formattedTimeRange, userName, onDownloa
         {/* --- TICKET CONTAINER --- */}
         <div className={cn(
             "relative w-[320px] drop-shadow-[0_15px_35px_rgba(0,0,0,0.6)] transition-all duration-300 font-mono select-none",
-            isCompleted ? "h-auto" : "aspect-[9/16]"
+            isVisualArchived ? "h-auto" : "aspect-[9/16]"
         )}>
             
-            {/* TICKET WRAPPER 
-               - For Active: Just a container, backgrounds handled by children.
-               - For Used: Applies the Zinc BG and ClipPath here.
-            */}
+            {/* TICKET WRAPPER */}
             <div 
-                className={cn(
-                    "w-full rounded-3xl flex flex-col relative", 
-                    isCompleted ? "bg-zinc-900 overflow-hidden" : "" 
-                )}
+                className="w-full rounded-3xl flex flex-col relative overflow-hidden bg-transparent" // Important: bg-transparent here
                 style={{
-                    clipPath: isCompleted ? rippedEdgeClipPath : undefined,
-                    boxShadow: isCompleted ? "inset 0 0 60px rgba(0,0,0,0.5)" : undefined
+                    clipPath: isVisualArchived ? rippedEdgeClipPath : undefined,
+                    // Box shadow applied here for the ripped effect, but background is on children
+                    boxShadow: isVisualArchived ? "inset 0 0 60px rgba(0,0,0,0.5)" : undefined
                 }}
             >
                 {/* --- USED STAMP --- */}
-                {isCompleted && (
+                {isCompletedStatus && (
                     <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
                         <div className="border-4 border-red-600 rounded-lg px-5 py-0.5 -rotate-12 shadow-none backdrop-blur-none bg-transparent">
                             <span className="text-5xl font-bold text-red-600 pl-3 tracking-[0.2em]">USED</span>
@@ -132,22 +152,21 @@ export function BookingTicket({ booking, formattedTimeRange, userName, onDownloa
                 <div 
                     className={cn(
                         "bg-gradient-to-br from-emerald-700 via-emerald-800 to-teal-900 p-6 pt-6 pb-6 text-white relative shrink-0",
-                        // If active, round top corners. If used, parent rounds them.
-                        !isCompleted && "rounded-t-3xl", 
-                        isCompleted && "grayscale-[90%] opacity-80"
+                        !isVisualArchived && "rounded-t-3xl", 
+                        isVisualArchived && "grayscale-[90%] opacity-80"
                     )}
                     style={{
-                        // Active: Cut bottom corners for punch holes
-                        mask: !isCompleted ? maskBottomCorners : undefined,
-                        WebkitMask: !isCompleted ? maskBottomCorners : undefined,
+                        // Always apply bottom corner mask, even if archived, for transparency
+                        mask: maskBottomCorners,
+                        WebkitMask: maskBottomCorners,
                     }}
                 >
 
 
                     <div className="relative z-10">
                         <div className="flex justify-between items-center mb-4">
-                            <Badge className="bg-black/30 text-emerald-50 border border-dotted border-white/40 backdrop-blur-md tracking-widest font-bold px-3 py-1 text-[10px] rounded-sm shadow-sm">
-                                {isCompleted ? "ARCHIVED" : "ENTRY PASS"}
+                            <Badge className="bg-black/30 text-emerald-50 border border-dotted border-white/40 backdrop-blur-md tracking-widest font-bold px-3 py-1 text-[10px] rounded-md shadow-sm">
+                                {isVisualArchived ? "ARCHIVED" : "ENTRY PASS"}
                             </Badge>
                             
 
@@ -171,14 +190,15 @@ export function BookingTicket({ booking, formattedTimeRange, userName, onDownloa
                 <div 
                     className={cn(
                         "p-6 flex-1 flex flex-col relative bg-[url('/noise.png')] bg-repeat opacity-95",
-                        !isCompleted && "bg-zinc-900", 
-                        isCompleted && "grayscale-[90%]"
+                        "bg-zinc-900", // Always applied to child
+                        isVisualArchived && "grayscale-[90%]"
                     )}
                     style={{
-                        // Active: Cut top corners (header join) AND bottom corners (barcode join)
-                        mask: !isCompleted ? maskBothCorners : undefined,
-                        WebkitMask: !isCompleted ? maskBothCorners : undefined,
-                        boxShadow: !isCompleted ? "inset 0 0 60px rgba(0,0,0,0.5)" : undefined
+                        // Active: Both corners 
+                        // Archived: Top corners only (for the holes). Bottom is handled by parent ClipPath.
+                        mask: isVisualArchived ? maskTopCorners : maskBothCorners,
+                        WebkitMask: isVisualArchived ? maskTopCorners : maskBothCorners,
+                        boxShadow: !isVisualArchived ? "inset 0 0 60px rgba(0,0,0,0.5)" : undefined
                     }}
                 >
                     {/* Grid Details */}
@@ -237,10 +257,9 @@ export function BookingTicket({ booking, formattedTimeRange, userName, onDownloa
                         </div>
                     </div>
                     
-                    {/* Padding at bottom to ensure content doesn't hit the cut line */}
                     <div className="pb-4"></div>
 
-                    {isCompleted && (
+                    {isVisualArchived && (
                         <div className="mt-auto text-center pb-1 opacity-60">
                             <p className="font-mono text-[10px] font-bold tracking-[0.25em] text-zinc-400 uppercase">TICKET NO LONGER VALID</p>
                         </div>
@@ -248,13 +267,9 @@ export function BookingTicket({ booking, formattedTimeRange, userName, onDownloa
                 </div>
 
                 {/* --- CUT SEPARATOR (Only Active) --- */}
-                {!isCompleted && (
-                    // This absolute container sits exactly where the masks create the gap
-                    <div className="absolute left-0 w-full z-20 flex items-center justify-center pointer-events-none" style={{ top: "calc(100% - 100px - 38px)" /* Approximate position above barcode */ }}>
-                        {/* The Dotted Line */}
+                {!isVisualArchived && (
+                    <div className="absolute left-0 w-full z-20 flex items-center justify-center pointer-events-none" style={{ top: "calc(100% - 100px - 38px)" }}>
                         <div className="w-[85%] border-b-[3px] border-dotted border-zinc-600/50"></div>
-                        
-                        {/* Scissor Icon */}
                         <div className="absolute right-6 bg-transparent px-1.5 text-zinc-500">
                             <Scissors className="h-4 w-4 rotate-180" />
                         </div>
@@ -262,13 +277,12 @@ export function BookingTicket({ booking, formattedTimeRange, userName, onDownloa
                 )}
 
                 {/* --- BARCODE SECTION (Only Active) --- */}
-                {!isCompleted && (
+                {!isVisualArchived && (
                     <div 
                         className={cn(
                             "bg-zinc-900 px-6 pb-8 pt-6 flex flex-col items-center justify-end relative grow min-h-[100px] rounded-b-3xl"
                         )}
                         style={{
-                            // Active: Cut top corners for punch holes
                             mask: maskTopCorners,
                             WebkitMask: maskTopCorners
                         }}
@@ -285,7 +299,7 @@ export function BookingTicket({ booking, formattedTimeRange, userName, onDownloa
         </div>
 
         {/* --- FLOATING ACTIONS --- */}
-        {!isCompleted && (
+        {!isVisualArchived && (
             <div className="flex gap-4 w-full max-w-[340px] animate-in slide-in-from-bottom-4 fade-in duration-500">
                 <Button 
                     variant="outline" 
