@@ -14,13 +14,14 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { 
-  User, Calendar, MapPin, Clock, CreditCard, Star, Edit2, LogOut, 
-  CheckCircle, AlertCircle, Timer, XCircle, Share2, Download, Ticket, ArrowLeft, Loader2, ChevronRight, Info, ThumbsUp, Wallet, Filter, Trash2, MoreHorizontal, ArrowRight, X, Bookmark
+  User, Calendar, MapPin, Clock, CreditCard, Edit2, LogOut, 
+  CheckCircle, AlertCircle, Timer, XCircle, Share2, Download, Ticket, ChevronRight, Info, ThumbsUp, Wallet, Trash2, Star, X
 } from "lucide-react"
-import { format, isPast, parseISO, isValid, isFuture, addMinutes, isBefore } from "date-fns"
+import { format, isPast, parseISO, isValid, isFuture, addMinutes } from "date-fns"
 import { cn } from "@/lib/utils"
 import { UniversalLoader } from "@/components/ui/universal-loader"
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
+
 // --- IMPORTS ---
 import { SlidingActionCard } from "@/components/SlidingActionCard";
 import { MobileSlideCard } from "@/components/MobileSlideCard";
@@ -59,14 +60,12 @@ function BookingTimer({ createdAt, mode = "badge", className }: { createdAt: str
     const interval = setInterval(() => setTimeLeft(calculate()), 1000);
     return () => clearInterval(interval);
   }, [createdAt]);
-  if (!createdAt || timeLeft === null) return null;
-  if (timeLeft === 0) return mode === "badge" ? <Badge variant="outline" className="border-red-200 bg-red-50 text-red-600 gap-1 text-[10px] px-1.5 h-5"><XCircle className="h-3 w-3" /> Expired</Badge> : <span className="text-red-500 font-bold">Expired</span>;
+  if (!createdAt || timeLeft === null || timeLeft === 0) return null;
   return mode === "badge" ? <Badge variant="outline" className="border-orange-200 bg-orange-50 text-orange-700 gap-1 font-mono text-[10px] px-1.5 h-5"><Timer className="h-3 w-3" /> {Math.floor(timeLeft / 60)}:{ (timeLeft % 60).toString().padStart(2, '0') }</Badge> : <span className={cn("font-mono font-bold", className || "text-orange-600 text-xl")}>{Math.floor(timeLeft / 60)}:{ (timeLeft % 60).toString().padStart(2, '0') }</span>;
 }
 
 export default function UserProfilePage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { clearUser, setName } = useUserStore();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [bookings, setBookings] = useState<BookingDetail[]>([]);
@@ -87,9 +86,14 @@ export default function UserProfilePage() {
   const [ticketBooking, setTicketBooking] = useState<BookingDetail | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [infoBooking, setInfoBooking] = useState<BookingDetail | null>(null);
-  const desktopSliderRef = useRef<HTMLDivElement>(null);
   const mobileSliderRef = useRef<HTMLDivElement>(null);
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
+  
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchUserData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -150,17 +154,29 @@ export default function UserProfilePage() {
     const d = new Date(booking.date); d.setHours(hours, minutes, 0, 0); return d;
   };
 
+  const getBookingEndDateTime = (booking: BookingDetail) => {
+    const timeRange = getFormattedTimeRange(booking.slot);
+    if(timeRange === "Unknown Time") return new Date(booking.date);
+    const parts = timeRange.split(" - ");
+    if (parts.length < 2) return new Date(booking.date);
+    const [time, period] = parts[1].trim().split(" ");
+    let [hours, minutes] = time.split(":").map(Number);
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    const d = new Date(booking.date); d.setHours(hours, minutes, 0, 0); return d;
+  };
+
   const upcomingBookings = useMemo(() => bookings.filter(b => { 
       if (b.status === 'cancelled' || b.status === 'blocked' || (b.status !== 'confirmed' && b.payment_status !== 'paid')) return false; 
-      return isFuture(getBookingStartDateTime(b)); 
-  }).sort((a, b) => getBookingStartDateTime(a).getTime() - getBookingStartDateTime(b).getTime()), [bookings, timeSlots]);
+      return isFuture(getBookingEndDateTime(b)); 
+  }).sort((a, b) => getBookingStartDateTime(a).getTime() - getBookingStartDateTime(b).getTime()), [bookings, tick]);
 
   const historyBookings = useMemo(() => bookings.filter(b => { 
       if (b.status === 'completed' || b.status === 'cancelled' || b.payment_status === 'failed') return true; 
-      if (b.status === 'confirmed' || b.payment_status === 'paid') return isPast(getBookingStartDateTime(b)); 
+      if (b.status === 'confirmed' || b.payment_status === 'paid') return isPast(getBookingEndDateTime(b)); 
       if (b.payment_status === 'pending' && b.created_at && isPast(addMinutes(parseISO(b.created_at), 5))) return true;
       return false; 
-  }), [bookings, timeSlots]);
+  }), [bookings, tick]);
 
   const filteredHistory = useMemo(() => {
     if (historyFilter === 'all') return historyBookings;
@@ -175,11 +191,18 @@ export default function UserProfilePage() {
   const slides = useMemo(() => {
     const items = [];
     if (upcomingBookings.length > 0) items.push({ type: 'booking', data: upcomingBookings[0] });
-    if (pendingPayments.length > 0) items.push({ type: 'payment', data: pendingPayments });
+    
+    const activePayments = pendingPayments.filter(b => {
+        if (!b.created_at) return false;
+        const expiryTime = new Date(b.created_at).getTime() + (5 * 60 * 1000);
+        return Date.now() < expiryTime;
+    });
+
+    if (activePayments.length > 0) items.push({ type: 'payment', data: activePayments });
     if (rateableBooking) items.push({ type: 'rate', data: rateableBooking });
     if (items.length === 0) items.push({ type: 'empty' });
     return items;
-  }, [upcomingBookings, pendingPayments, rateableBooking]);
+  }, [upcomingBookings, pendingPayments, rateableBooking, tick]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const newIndex = Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth);
@@ -208,7 +231,7 @@ export default function UserProfilePage() {
                 <Card className={cn("rounded-2xl", pendingPayments.length > 0 ? "bg-red-500/5 border-red-500/10" : "bg-secondary/50 border-border")}><CardContent className="p-3 md:p-6 text-center h-full flex flex-col justify-center"><h3 className={cn("text-2xl md:text-4xl font-bold mb-1", pendingPayments.length > 0 ? "text-red-500" : "text-foreground")}>{pendingPayments.length}</h3><p className="text-[10px] md:text-sm text-muted-foreground leading-tight">Pending / Failed</p></CardContent></Card>
             </div>
             <div className="hidden md:block flex-1 min-h-[140px] relative overflow-hidden rounded-2xl border border-border bg-card/50">
-               <div ref={desktopSliderRef} className="flex overflow-x-auto gap-4 snap-x snap-mandatory scrollbar-hide h-full w-full px-4" onScroll={handleScroll}>
+               <div className="flex overflow-x-auto gap-4 snap-x snap-mandatory scrollbar-hide h-full w-full px-4" onScroll={handleScroll}>
                   {slides.map((slide, idx) => (
                     <div key={idx} className="w-full flex-shrink-0 snap-center flex flex-col justify-center h-full">
                         {slide.type === 'booking' && (<div className="bg-card border-2 border-green-500/50 p-6 rounded-2xl flex items-center justify-between cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => setTicketBooking(slide.data as BookingDetail)}><div className="flex items-center gap-4"><div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center"><Calendar className="h-6 w-6 text-green-600"/></div><div><p className="font-medium text-lg">Next Match: {(slide.data as BookingDetail).turfs.name}</p><p className="text-muted-foreground text-sm">{format(new Date((slide.data as BookingDetail).date), "PPP")} • {getFormattedTimeRange((slide.data as BookingDetail).slot)}</p></div></div><ChevronRight className="h-5 w-5 text-muted-foreground" /></div>)}
@@ -233,7 +256,6 @@ export default function UserProfilePage() {
           {upcomingBookings.length === 0 ? <div className="text-center py-12 opacity-50"><Calendar className="h-12 w-12 mx-auto mb-2" /><p>No confirmed upcoming matches.</p></div> : upcomingBookings.map((b, idx) => (<BookingCard key={b.id} booking={b} timeRange={getFormattedTimeRange(b.slot)} isNearest={idx === 0} onViewTicket={() => setTicketBooking(b)} />))}
         </TabsContent>
 
-        {/* RESTORED HISTORY SECTION WITH FILTERS */}
         <TabsContent value="history" className="space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
              <h2 className="text-xl font-bold">Past Matches</h2>
@@ -288,51 +310,26 @@ export default function UserProfilePage() {
         </div>
       )}
 
-      {/* --- TICKET MODAL --- */}
+      {/* --- MODALS --- */}
       <Dialog open={!!ticketBooking} onOpenChange={(open) => !open && setTicketBooking(null)}>
-        <DialogContent 
-          className="bg-transparent border-none shadow-none p-0 w-fit max-w-full sm:max-w-md outline-none focus:ring-0 overflow-visible flex items-center justify-center"
-          onPointerDownOutside={() => setTicketBooking(null)}
-        >
+        <DialogContent className="bg-transparent border-none shadow-none p-0 w-fit max-w-full sm:max-w-md outline-none focus:ring-0 overflow-visible flex items-center justify-center">
           <DialogTitle className="sr-only">Ticket Details</DialogTitle>
           {ticketBooking && (
-             <BookingTicket 
-                booking={ticketBooking}
-                formattedTimeRange={getFormattedTimeRange(ticketBooking.slot)}
-                userName={profile?.name || "Player"}
-                onShare={() => {}} 
-             />
+             <BookingTicket booking={ticketBooking} formattedTimeRange={getFormattedTimeRange(ticketBooking.slot)} userName={profile?.name || "Player"} onShare={() => {}} />
           )}
         </DialogContent>
       </Dialog>
 
-      {/* --- VIEW ALL HISTORY MODAL --- */}
       <Dialog open={viewHistoryModal} onOpenChange={setViewHistoryModal}>
         <DialogContent className="sm:max-w-xl w-[95vw] rounded-3xl max-h-[85vh] flex flex-col p-0 overflow-hidden bg-background border-border">
-            <DialogHeader className="p-6 pb-2">
-                <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-                    <Calendar className="h-5 w-5 text-emerald-500" /> Complete History
-                </DialogTitle>
-                <DialogDescription>A list of all your {historyFilter} matches.</DialogDescription>
-            </DialogHeader>
-            {/* Emerald Scrollbar styling applied here */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 
-                [&::-webkit-scrollbar]:w-1.5
-                [&::-webkit-scrollbar-track]:bg-transparent
-                [&::-webkit-scrollbar-thumb]:bg-emerald-500/30
-                [&::-webkit-scrollbar-thumb]:rounded-full
-                hover:[&::-webkit-scrollbar-thumb]:bg-emerald-500/60">
-                {filteredHistory.map(b => (
-                   <BookingCard key={b.id} booking={b} timeRange={getFormattedTimeRange(b.slot)} onViewTicket={() => { setViewHistoryModal(false); setTicketBooking(b); }} onViewInfo={() => setInfoBooking(b)} />
-                ))}
+            <DialogHeader className="p-6 pb-2"><DialogTitle className="text-2xl font-bold flex items-center gap-2"><Calendar className="h-5 w-5 text-emerald-500" /> Complete History</DialogTitle><DialogDescription>A list of all your {historyFilter} matches.</DialogDescription></DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-emerald-500/30 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-emerald-500/60">
+                {filteredHistory.map(b => (<BookingCard key={b.id} booking={b} timeRange={getFormattedTimeRange(b.slot)} onViewTicket={() => { setViewHistoryModal(false); setTicketBooking(b); }} onViewInfo={() => setInfoBooking(b)} />))}
             </div>
-            <DialogFooter className="p-4 border-t bg-muted/20">
-                <Button variant="ghost" onClick={() => setViewHistoryModal(false)} className="w-full rounded-xl">Close History</Button>
-            </DialogFooter>
+            <DialogFooter className="p-4 border-t bg-muted/20"><Button variant="ghost" onClick={() => setViewHistoryModal(false)} className="w-full rounded-xl">Close History</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* OTHER MODALS (PAYMENT LIST, INFO, EDIT, RATE) */}
       <Dialog open={paymentListModalOpen} onOpenChange={setPaymentListModalOpen}>
         <DialogContent className="sm:max-w-md w-[95vw] rounded-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertCircle className="h-5 w-5 text-red-600"/> Pending Payments ({pendingPayments.length})</DialogTitle><DialogDescription>Pay now to confirm or cancel to free up slots.</DialogDescription></DialogHeader>
@@ -347,23 +344,84 @@ export default function UserProfilePage() {
             <DialogFooter><Button variant="outline" onClick={() => setPaymentListModalOpen(false)} className="w-full">Close</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={!!infoBooking} onOpenChange={(open) => !open && setInfoBooking(null)}><DialogContent className="sm:max-w-md w-[90vw] rounded-2xl"><DialogHeader><DialogTitle className="flex items-center gap-3 text-red-600"><XCircle className="h-6 w-6"/> Booking Cancelled</DialogTitle><DialogDescription>Details regarding this cancellation.</DialogDescription></DialogHeader><div className="space-y-4 py-2"><div className="bg-red-50 border border-red-100 p-4 rounded-xl"><p className="text-sm font-bold text-red-800 mb-1">Reason for Cancellation</p><p className="text-sm text-red-700">{infoBooking?.payment_status === 'failed' ? "Payment failed at gateway." : "Payment timed out."}</p></div><div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-muted-foreground">Attempted Date</p><p className="font-medium">{infoBooking ? format(new Date(infoBooking.date), "PPP") : "-"}</p></div><div><p className="text-muted-foreground">Booking ID</p><p className="font-mono">{infoBooking?.id.slice(0,8).toUpperCase()}</p></div></div></div><DialogFooter><Button variant="outline" onClick={() => setInfoBooking(null)}>Close</Button></DialogFooter></DialogContent></Dialog>
-      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}><DialogContent className="sm:max-w-md w-[90vw] rounded-2xl"><DialogHeader><DialogTitle>Edit Profile</DialogTitle></DialogHeader><div className="space-y-4 py-4"><Input value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} /><Input value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} /></div><DialogFooter><Button onClick={handleUpdateProfile} disabled={isUpdating}>Save</Button></DialogFooter></DialogContent></Dialog>
-      <Dialog open={ratingModalOpen} onOpenChange={setRatingModalOpen}><DialogContent className="sm:max-w-md w-[90vw] rounded-2xl"><DialogHeader><DialogTitle>Rate Your Experience</DialogTitle></DialogHeader><div className="flex justify-center gap-2 py-6">{[1, 2, 3, 4, 5].map((star) => <button key={star} onClick={() => setRatingValue(star)}><Star className={cn("h-10 w-10", star <= ratingValue ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30")} /></button>)}</div><div className="space-y-2"><Label>Review</Label><Textarea value={reviewText} onChange={(e) => setReviewText(e.target.value)} /></div><DialogFooter><Button onClick={handleSubmitReview} disabled={ratingValue === 0 || isSubmittingReview}>Submit</Button></DialogFooter></DialogContent></Dialog>
+
+      <Dialog open={!!infoBooking} onOpenChange={(open) => !open && setInfoBooking(null)}>
+        <DialogContent className="sm:max-w-md w-[90vw] rounded-2xl">
+          <DialogHeader><DialogTitle className="flex items-center gap-3 text-red-600"><XCircle className="h-6 w-6"/> Booking Cancelled</DialogTitle><DialogDescription>Details regarding this cancellation.</DialogDescription></DialogHeader>
+          <div className="space-y-4 py-2"><div className="bg-red-50 border border-red-100 p-4 rounded-xl"><p className="text-sm font-bold text-red-800 mb-1">Reason for Cancellation</p><p className="text-sm text-red-700">{infoBooking?.payment_status === 'failed' ? "Payment failed at gateway." : "Payment timed out."}</p></div><div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-muted-foreground">Attempted Date</p><p className="font-medium">{infoBooking ? format(new Date(infoBooking.date), "PPP") : "-"}</p></div><div><p className="text-muted-foreground">Booking ID</p><p className="font-mono">{infoBooking?.id.slice(0,8).toUpperCase()}</p></div></div></div>
+          <DialogFooter><Button variant="outline" onClick={() => setInfoBooking(null)}>Close</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="sm:max-w-md w-[90vw] rounded-2xl">
+          <DialogHeader><DialogTitle>Edit Profile</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4"><Input value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} /><Input value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} /></div>
+          <DialogFooter><Button onClick={handleUpdateProfile} disabled={isUpdating}>Save</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={ratingModalOpen} onOpenChange={setRatingModalOpen}>
+        <DialogContent className="sm:max-w-md w-[90vw] rounded-2xl">
+          <DialogHeader><DialogTitle>Rate Your Experience</DialogTitle></DialogHeader>
+          <div className="flex justify-center gap-2 py-6">{[1, 2, 3, 4, 5].map((star) => <button key={star} onClick={() => setRatingValue(star)}><Star className={cn("h-10 w-10", star <= ratingValue ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30")} /></button>)}</div>
+          <div className="space-y-2"><Label>Review</Label><Textarea value={reviewText} onChange={(e) => setReviewText(e.target.value)} /></div>
+          <DialogFooter><Button onClick={handleSubmitReview} disabled={ratingValue === 0 || isSubmittingReview}>Submit</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }
 
 function BookingCard({ booking, timeRange, onViewTicket, onViewInfo, isNearest }: { booking: BookingDetail, timeRange: string, onViewTicket?: () => void, onViewInfo?: () => void, isNearest?: boolean }) {
-  const isCancelled = booking.status === 'cancelled' || booking.payment_status === 'failed';
+  const isExpired = booking.payment_status === 'pending' && booking.created_at && isPast(addMinutes(parseISO(booking.created_at), 5));
+  const isCancelled = booking.status === 'cancelled' || booking.payment_status === 'failed' || isExpired;
+  const canViewTicket = booking.status === 'confirmed' || booking.status === 'completed';
+
   return (
     <Card className={cn("bg-card border-border rounded-2xl overflow-hidden hover:shadow-md transition-all", isNearest && "border-green-500/50 shadow-lg relative", isCancelled && "opacity-60")}>
       {isNearest && (<div className="absolute -top-3 left-4 bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-sm z-10 uppercase">Up Next</div>)}
-      <div className="flex flex-col sm:flex-row"><div className="sm:w-36 h-32 sm:h-auto relative bg-secondary"><img src={booking.turfs?.image || "/placeholder.svg"} className={cn("absolute inset-0 w-full h-full object-cover", isCancelled && "grayscale")} /></div><div className="p-5 flex-1 flex flex-col justify-between"><div><div className="flex justify-between items-start mb-2"><div><h3 className="font-bold text-lg leading-tight">{booking.turfs?.name}</h3><div className="flex items-center text-muted-foreground text-sm mt-1"><MapPin className="h-3 w-3 mr-1" /> {booking.turfs?.location}</div></div><Badge variant={isCancelled ? "destructive" : "secondary"}>{isCancelled ? "Cancelled" : booking.status}</Badge></div>
-      <div className="text-[10px] uppercase font-bold text-muted-foreground mb-2"><span>{booking.sport}</span></div>
-      <div className="grid grid-cols-2 gap-4 my-3"><div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-primary" /><span>{format(new Date(booking.date), "EEE, MMM d")}</span></div><div className="flex items-center gap-2 text-sm"><Clock className="h-4 w-4 text-primary" /><span>{timeRange}</span></div></div>
-      {isCancelled && booking.created_at && (<div className="mt-2 text-xs text-muted-foreground border-t border-dashed pt-2 flex items-center gap-1"><Info className="h-3 w-3" /> Booked: {formatToIST(booking.created_at)}</div>)}
-      </div><div className="flex justify-between items-center pt-3 border-t border-border"><p className="font-bold text-lg">₹{booking.amount}</p>{isCancelled ? (<Button variant="ghost" size="sm" className="text-xs" onClick={onViewInfo}><Info className="h-3 w-3 mr-1"/> Info</Button>) : booking.status === 'completed' || booking.status === 'confirmed' ? (<div className="flex gap-2"><Button variant="secondary" size="sm" className="rounded-full h-7 text-xs" onClick={() => (booking.status === 'completed' && !booking.rating) && onViewTicket?.()}>View / Rate</Button><Button variant="outline" size="sm" className="rounded-full h-7 text-xs border-dashed" onClick={onViewTicket}>View Ticket</Button></div>) : (<Button variant="outline" size="sm" className="rounded-full" onClick={onViewTicket}>View Ticket</Button>)}</div></div></div>
+      <div className="flex flex-col sm:flex-row">
+        <div className="sm:w-36 h-32 sm:h-auto relative bg-secondary">
+          <img src={booking.turfs?.image || "/placeholder.svg"} className={cn("absolute inset-0 w-full h-full object-cover", isCancelled && "grayscale")} alt="turf" />
+        </div>
+        <div className="p-5 flex-1 flex flex-col justify-between">
+          <div>
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <h3 className="font-bold text-lg leading-tight">{booking.turfs?.name}</h3>
+                <div className="flex items-center text-muted-foreground text-sm mt-1"><MapPin className="h-3 w-3 mr-1" /> {booking.turfs?.location}</div>
+              </div>
+              <Badge variant={isCancelled ? "destructive" : "secondary"}>
+                {isExpired ? "Payment Failed" : (isCancelled ? "Cancelled" : booking.status)}
+              </Badge>
+            </div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground mb-2"><span>{booking.sport}</span></div>
+            <div className="grid grid-cols-2 gap-4 my-3">
+              <div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-primary" /><span>{format(new Date(booking.date), "EEE, MMM d")}</span></div>
+              <div className="flex items-center gap-2 text-sm"><Clock className="h-4 w-4 text-primary" /><span>{timeRange}</span></div>
+            </div>
+          </div>
+          
+          <div className="flex justify-between items-center pt-3 border-t border-border">
+            <p className="font-bold text-lg">₹{booking.amount}</p>
+            <div className="flex gap-2">
+                {isCancelled ? (
+                  <Button variant="ghost" size="sm" className="text-xs" onClick={onViewInfo}><Info className="h-3 w-3 mr-1"/> Info</Button>
+                ) : (
+                  <>
+                    {canViewTicket && (
+                      <Button variant="outline" size="sm" className="rounded-full h-7 text-xs border-dashed" onClick={onViewTicket}>View Ticket</Button>
+                    )}
+                    {booking.status === 'completed' && !booking.rating && (
+                       <Button variant="secondary" size="sm" className="rounded-full h-7 text-xs" onClick={() => onViewTicket?.()}>Rate Game</Button>
+                    )}
+                  </>
+                )}
+            </div>
+          </div>
+        </div>
+      </div>
     </Card>
   )
 }

@@ -30,6 +30,10 @@ import { format, isFuture, isPast, parseISO } from "date-fns"
 import { cn } from "@/lib/utils"
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
+// --- IMPORT THE COMPONENTS ---
+import { AuthWizard } from "@/components/AuthWizard"
+import { MobileSlideCard } from "@/components/MobileSlideCard"
+
 type BookingDetail = {
   id: string; date: string; slot: string[]; amount: number; status: string; payment_status: string; rating: number | null; review: string | null; created_at: string | null; turfs: { name: string; location: string; };
 }
@@ -41,7 +45,7 @@ type SlideItem =
   | { type: 'payment', key: string, data: BookingDetail[] }
   | { type: 'rate', key: string, data: BookingDetail };
 
-function BookingTimer({ createdAt, mode = "text", className }: { createdAt: string | null, mode?: "badge" | "text", className?: string }) {
+function BookingTimer({ createdAt, className }: { createdAt: string | null, className?: string }) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   useEffect(() => {
     if (!createdAt) return;
@@ -59,17 +63,15 @@ function BookingTimer({ createdAt, mode = "text", className }: { createdAt: stri
     const interval = setInterval(() => setTimeLeft(calculate()), 1000);
     return () => clearInterval(interval);
   }, [createdAt]);
-  if (!createdAt) return null;
-  if (timeLeft === 0) return <span className="text-red-200 font-bold text-xs">Expired</span>;
-  if (timeLeft === null) return null;
-  return <span className={cn("font-mono font-bold", className)}>{Math.floor(timeLeft / 60)}:{ (timeLeft % 60).toString().padStart(2, '0') }</span>;
+  if (!createdAt || timeLeft === null) return null;
+  if (timeLeft === 0) return <span className="font-bold text-[10px]">Expired</span>;
+  return <span className={cn("font-mono font-bold", className)}>{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}</span>;
 }
 
 export default function Home() {
   const router = useRouter()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const mobileSliderRef = useRef<HTMLDivElement>(null)
-  
   const [loading, setLoading] = useState(true)
   
   const [userBookings, setUserBookings] = useState<BookingDetail[]>([])
@@ -88,7 +90,6 @@ export default function Home() {
   
   const { name } = useUserStore()
 
-  // 1. Initial Auth Check (Simplified: Timer and Hash are now in Navbar)
   useEffect(() => {
     const checkSession = async () => {
       await supabase.auth.getSession()
@@ -97,7 +98,6 @@ export default function Home() {
     checkSession()
   }, []);
 
-  // 2. Fetch User Data for Slider
   useEffect(() => {
     if (!name) return;
     const fetchSliderData = async () => {
@@ -116,7 +116,6 @@ export default function Home() {
     fetchSliderData();
   }, [name]);
 
-  // Helpers
   const getFormattedTimeRange = (slotIds: string[]) => {
     if (!slotIds || slotIds.length === 0 || timeSlots.length === 0) return "Unknown Time";
     const matchedSlots = slotIds.map(id => timeSlots.find(ts => ts.id === id)).filter(Boolean).sort((a, b) => a!.start_time.localeCompare(b!.start_time));
@@ -137,7 +136,6 @@ export default function Home() {
     return endDateTime;
   };
 
-  // Generate Slides
   const slides = useMemo(() => {
     if (!name || userBookings.length === 0) return [];
     const sorted = [...userBookings].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -154,7 +152,6 @@ export default function Home() {
     return items.filter(item => !dismissedKeys.includes(item.key));
   }, [userBookings, name, timeSlots, dismissedKeys]);
 
-  // Handlers
   const handleCloseSlide = () => {
     const currentSlide = slides[activeSlideIndex];
     if (currentSlide) {
@@ -271,26 +268,110 @@ export default function Home() {
         </Card>
       </section>
 
-      {/* --- FLOATING MOBILE SLIDER --- */}
+      {/* --- FLOATING MOBILE SLIDER (LIQUID GLASS VERSION) --- */}
       {name && slides.length > 0 && (
         <div className="md:hidden fixed bottom-4 left-4 right-4 z-50">
            <div className="absolute -top-3 -right-2 z-50">
-                <Button size="icon" variant="secondary" className="h-6 w-6 rounded-full shadow-md bg-background border border-border" onClick={handleCloseSlide}><X className="h-3 w-3" /></Button>
+                <Button size="icon" variant="secondary" className="h-6 w-6 rounded-full shadow-md bg-background border border-border hover:bg-destructive hover:text-white transition-colors" onClick={handleCloseSlide}>
+                    <X className="h-3 w-3" />
+                </Button>
            </div>
-           <div ref={mobileSliderRef} className="flex overflow-x-auto gap-4 snap-x snap-mandatory scrollbar-hide rounded-2xl shadow-xl bg-background/50 backdrop-blur-sm" onScroll={handleScroll}>
-              {slides.map((slide) => (
-                <div key={slide.key} className="w-full flex-shrink-0 snap-center">
-                    {slide.type === 'payment' && (<div className="bg-red-600 rounded-2xl text-white p-4 flex justify-between items-center shadow-lg" onClick={() => setPendingPaymentList(slide.data as BookingDetail[])}><div className="flex items-center gap-3"><div className="bg-white/20 p-2 rounded-full"><AlertCircle className="h-5 w-5"/></div><div><p className="font-bold text-sm">Action Required</p><div className="flex items-center gap-2"><p className="text-xs text-white/80">{(slide.data as BookingDetail[]).length} Pending</p><div className="h-1 w-1 bg-white/50 rounded-full"></div><BookingTimer createdAt={(slide.data as BookingDetail[])[0].created_at} className="text-white" /></div></div></div><ChevronRight className="h-5 w-5 text-white/70" /></div>)}
-                    {slide.type === 'booking' && (<div className=" border-2 border-green-600 rounded-2xl text-white p-4 flex justify-between items-center shadow-lg" onClick={() => setTicketBooking(slide.data as BookingDetail)}><div className="flex items-center gap-3"><div className="bg-white/20 p-2 rounded-full"><Calendar className="h-5 w-5 text-white"/></div><div className="text-left"><p className="font-bold text-sm">Next Match</p><p className="text-xs text-white/80">{(slide.data as BookingDetail).turfs.name.substring(0, 15)}...</p></div></div><div className="text-right"><p className="text-xs font-bold">{format(new Date((slide.data as BookingDetail).date), "MMM d")}</p><p className="text-[10px] text-white/80">{getFormattedTimeRange((slide.data as BookingDetail).slot).split(" - ")[0]}</p></div></div>)}
-                    {slide.type === 'rate' && (<div className="bg-blue-600 rounded-2xl text-white p-4 flex justify-between items-center shadow-lg" onClick={() => { setSelectedRateBooking(slide.data as BookingDetail); setRatingModalOpen(true); }}><div className="flex items-center gap-3"><div className="bg-white/20 p-2 rounded-full"><ThumbsUp className="h-5 w-5"/></div><div><p className="font-bold text-sm">How was the game?</p><p className="text-xs text-white/80">{(slide.data as BookingDetail).turfs.name}</p></div></div><Button size="sm" variant="secondary" className="text-blue-600 h-8 text-xs font-bold rounded-full">Rate</Button></div>)}
-                </div>
-              ))}
+           
+           <div ref={mobileSliderRef} className="flex overflow-x-auto gap-4 snap-x snap-mandatory scrollbar-hide rounded-2xl" onScroll={handleScroll}>
+              {slides.map((slide) => {
+                if (slide.type === 'payment') {
+                    const pendingList = slide.data as BookingDetail[];
+                    return (
+                        <div key={slide.key} className="w-full flex-shrink-0 snap-center">
+                            <MobileSlideCard 
+                                theme={{
+                                    bg: "bg-red-600/80",
+                                    iconBg: "bg-white/20",
+                                    iconColor: "text-white",
+                                    titleColor: "text-white",
+                                    subTextColor: "text-white/80",
+                                    arrowColor: "text-white/70",
+                                    glass: true
+                                }}
+                                icon={<AlertCircle className="h-5 w-5" />}
+                                title="Action Required"
+                                subContent={
+                                    <div className="flex items-center gap-2">
+                                        <span>{pendingList.length} Pending</span>
+                                        <div className="h-1 w-1 bg-white/50 rounded-full"></div>
+                                        <BookingTimer createdAt={pendingList[0].created_at} className="text-white" />
+                                    </div>
+                                }
+                                onClick={() => setPendingPaymentList(pendingList)}
+                            />
+                        </div>
+                    );
+                }
+
+                if (slide.type === 'booking') {
+                    const booking = slide.data as BookingDetail;
+                    return (
+                        <div key={slide.key} className="w-full flex-shrink-0 snap-center">
+                            <MobileSlideCard 
+                                theme={{
+                                    bg: "bg-emerald-600/80",
+                                    iconBg: "bg-white/20",
+                                    iconColor: "text-white",
+                                    titleColor: "text-white",
+                                    subTextColor: "text-white/80",
+                                    arrowColor: "text-white/70",
+                                    glass: true
+                                }}
+                                icon={<Calendar className="h-5 w-5" />}
+                                title="Next Match"
+                                subContent={booking.turfs.name.length > 20 ? booking.turfs.name.substring(0, 20) + "..." : booking.turfs.name}
+                                rightContent={
+                                    <div className="text-right text-white">
+                                        <p className="text-xs font-bold">{format(new Date(booking.date), "MMM d")}</p>
+                                        <p className="text-[10px] opacity-80">{getFormattedTimeRange(booking.slot).split(" - ")[0]}</p>
+                                    </div>
+                                }
+                                onClick={() => setTicketBooking(booking)}
+                            />
+                        </div>
+                    );
+                }
+
+                if (slide.type === 'rate') {
+                    const rateBooking = slide.data as BookingDetail;
+                    return (
+                        <div key={slide.key} className="w-full flex-shrink-0 snap-center">
+                            <MobileSlideCard 
+                                theme={{
+                                    bg: "bg-blue-600/80",
+                                    iconBg: "bg-white/20",
+                                    iconColor: "text-white",
+                                    titleColor: "text-white",
+                                    subTextColor: "text-white/80",
+                                    arrowColor: "text-white/70",
+                                    glass: true
+                                }}
+                                icon={<ThumbsUp className="h-5 w-5" />}
+                                title="How was the game?"
+                                subContent={rateBooking.turfs.name}
+                                rightContent={
+                                    <Button size="sm" variant="secondary" className="text-blue-600 h-8 text-xs font-bold rounded-full px-4 bg-white/90">
+                                        Rate
+                                    </Button>
+                                }
+                                onClick={() => { setSelectedRateBooking(rateBooking); setRatingModalOpen(true); }}
+                            />
+                        </div>
+                    );
+                }
+                return null;
+              })}
            </div>
-           {slides.length > 1 && (<div className="flex justify-center gap-1.5 mt-2">{slides.map((_, idx) => <div key={idx} className={cn("h-1.5 rounded-full transition-all shadow-sm", idx === activeSlideIndex ? "w-4 bg-white/80" : "w-1.5 bg-black/20")} />)}</div>)}
+           {slides.length > 1 && (<div className="flex justify-center gap-1.5 mt-2">{slides.map((_, idx) => <div key={idx} className={cn("h-1.5 rounded-full transition-all shadow-sm", idx === activeSlideIndex ? "w-4 bg-black/40" : "w-1.5 bg-black/10")} />)}</div>)}
         </div>
       )}
 
-      {/* --- ALL MODALS (Ticket, Rate, Payments) --- */}
+      {/* --- ALL MODALS --- */}
       <Dialog open={!!ticketBooking} onOpenChange={(open) => !open && setTicketBooking(null)}>
         <DialogContent className="w-[90vw] max-w-md rounded-3xl p-0 overflow-hidden bg-transparent border-none shadow-none sm:max-w-md">
           {ticketBooking && (
@@ -305,7 +386,7 @@ export default function Home() {
                     <div><p className="text-[10px] uppercase font-bold mb-1">Time</p><div className="flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /><span className="font-semibold">{getFormattedTimeRange(ticketBooking.slot)}</span></div></div>
                   </div>
                   <div className="mt-8 p-4 bg-secondary/30 rounded-xl border border-dashed flex items-center justify-between"><div><p className="text-[10px] font-bold">Booking ID</p><p className="font-mono text-sm tracking-widest uppercase">{ticketBooking.id.slice(0, 8)}</p></div><CheckCircle className="h-5 w-5 text-green-600" /></div>
-                  <div className="flex gap-3 mt-6"><Button variant="outline" className="flex-1 rounded-xl"><Download className="h-4 w-4 mr-2"/> Save</Button><Button className="flex-1 rounded-xl bg-indigo-600 text-white" onClick={handleShareTicket}><Share2 className="h-4 w-4 mr-2"/> Share</Button></div>
+                  <div className="flex gap-3 mt-6"><Button variant="outline" className="flex-1 rounded-xl" onClick={() => alert('Download coming soon')}><Download className="h-4 w-4 mr-2"/> Save</Button><Button className="flex-1 rounded-xl bg-indigo-600 text-white" onClick={handleShareTicket}><Share2 className="h-4 w-4 mr-2"/> Share</Button></div>
                 </div>
               </div>
             </div>
