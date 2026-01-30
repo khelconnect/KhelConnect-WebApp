@@ -14,6 +14,7 @@ import { MainNavbar } from "@/components/main-navbar"
 import { Facebook, Twitter, Instagram } from "lucide-react"
 import { AppUpdater } from "@/components/AppUpdater" // 1. Import the updater
 import { VersionDisplay } from "@/components/VersionDisplay";
+import Script from "next/script"
 
 const qualyNeue = localFont({
   src: [
@@ -82,6 +83,10 @@ export const metadata: Metadata = {
     images: ["/og.png"],
   },
 
+  other: {
+  "brave-search-indexing": "true",
+  },
+
   robots: {
     index: true,
     follow: true,
@@ -105,6 +110,36 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={qualyNeue.variable}>
+    <head>
+      {/* Structured Data for SEO (VIMP for Google) */}
+      <Script
+        id="structured-data"
+        type="application/ld+json"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "SportsActivityLocation",
+            "name": "Khelconnect",
+            "url": "https://khelconnect.in",
+            "description":
+              "Online platform to book football, cricket, and pickleball turfs in Kolkata.",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "Kolkata",
+              "addressRegion": "WB",
+              "addressCountry": "IN",
+            },
+            "sameAs": [
+              "https://www.facebook.com/khelconnectkolkata/",
+              "https://www.instagram.com/khelconnect_in/",
+              "https://x.com/khelconnect_in",
+            ],
+          }),
+        }}
+      />
+
+    </head>
       <body className={`${inter.className} bg-background`}>
         <ThemeScript />
         <ThemeProvider defaultTheme="dark">
