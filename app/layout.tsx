@@ -14,7 +14,6 @@ import { MainNavbar } from "@/components/main-navbar"
 import { Facebook, Twitter, Instagram } from "lucide-react"
 import { AppUpdater } from "@/components/AppUpdater" // 1. Import the updater
 import { VersionDisplay } from "@/components/VersionDisplay";
-import Script from "next/script"
 
 const qualyNeue = localFont({
   src: [
@@ -29,7 +28,7 @@ const qualyNeue = localFont({
       style: 'normal',
     },
   ],
-  variable: '--font-qualyneue', // optional, for CSS variables
+  variable: '--font-qualyneue', 
   display: 'swap',
 });
 
@@ -52,7 +51,7 @@ export const metadata: Metadata = {
     "Khelconnect",
   ],
 
-  metadataBase: new URL("https://khelconnect.in"), // change if different
+  metadataBase: new URL("https://khelconnect.in"), 
   alternates: {
     canonical: "https://khelconnect.in",
   },
@@ -65,7 +64,7 @@ export const metadata: Metadata = {
     siteName: "Khelconnect",
     images: [
       {
-        url: "/og.png", // create this (1200x630)
+        url: "/og.png", 
         width: 1200,
         height: 630,
         alt: "Khelconnect – Sports Turf Booking Platform",
@@ -143,7 +142,9 @@ export default function RootLayout({
       <body className={`${inter.className} bg-background`}>
         <ThemeScript />
         <ThemeProvider defaultTheme="dark">
-          {/* 2. Add AppUpdater here so it runs globally */}
+          {/* 2. Add AuthListener here to monitor session validity */}
+          <AuthListener />
+          
           <AppUpdater />
           
           <MainNavbar />

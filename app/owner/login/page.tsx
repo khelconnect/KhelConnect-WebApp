@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
-import { Loader2, Lock, Mail } from "lucide-react"
+import { Lock, Mail } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient" 
+// --- IMPORT UNIVERSAL LOADER ---
+import { UniversalLoader } from "@/components/ui/universal-loader"
 
 export default function OwnerLoginPage() {
   const router = useRouter()
@@ -34,14 +36,13 @@ export default function OwnerLoginPage() {
 
       // 2. Check Role (Corrected to use 'users' table)
       const { data: userProfile, error: profileError } = await supabase
-        .from("users") // <--- FIXED: Was 'profiles'
+        .from("users")
         .select("role")
         .eq("id", data.user.id)
         .single()
 
       if (profileError || !userProfile) {
-         // Fallback: If DB row is missing but Auth worked, user likely needs verification
-         // We let them through to dashboard where "Unverified" screen handles it
+         // Fallback logic remains same
          console.warn("User profile missing, redirecting to pending screen...");
       } else {
          // Strict Role Check
@@ -52,23 +53,22 @@ export default function OwnerLoginPage() {
       }
 
       // 3. Cookie Sync & Redirect
-      // Force a router refresh to ensure Middleware sees the new cookie
       router.refresh(); 
-      
-      // Small delay to ensure cookies are set before redirecting
       await new Promise(resolve => setTimeout(resolve, 100));
-      
       router.push("/owner/dashboard");
       
     } catch (err: any) {
       console.error("Owner Login Error:", err);
       setError(err.message || "Login failed");
-      setIsLoading(false); // Only stop loading on error (on success we redirect)
+      setIsLoading(false); 
     }
   }
 
   return (
     <div className="container max-w-md mx-auto py-12 px-4 min-h-screen flex items-center justify-center">
+      {/* --- UNIVERSAL LOADER OVERLAY --- */}
+      {isLoading && <UniversalLoader />}
+
       <Card className="bg-card border-border rounded-3xl shadow-2xl w-full">
         <CardHeader className="space-y-2 text-center pb-8">
           <CardTitle className="text-3xl font-bold">Partner Login</CardTitle>
@@ -125,13 +125,7 @@ export default function OwnerLoginPage() {
               className="w-full bg-primary hover:bg-primary/90 text-white rounded-xl py-6 text-lg font-medium transition-all"
               disabled={isLoading}
             >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Verifying...
-                </>
-              ) : (
-                "Access Dashboard"
-              )}
+              Access Dashboard
             </Button>
           </form>
 

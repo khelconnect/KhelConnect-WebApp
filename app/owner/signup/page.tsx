@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, ArrowLeft } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient" 
 import Link from "next/link"
+// --- IMPORT UNIVERSAL LOADER ---
+import { UniversalLoader } from "@/components/ui/universal-loader"
 
 export default function OwnerSignupPage() {
   const router = useRouter()
@@ -113,6 +115,9 @@ export default function OwnerSignupPage() {
 
   return (
     <div className="container max-w-md mx-auto py-12 px-4">
+      {/* --- UNIVERSAL LOADER OVERLAY --- */}
+      {isLoading && <UniversalLoader />}
+
       <Card className="bg-card border-border rounded-3xl shadow-lg">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold">
@@ -159,7 +164,7 @@ export default function OwnerSignupPage() {
               </div>
 
               <Button type="submit" className="w-full py-6 rounded-xl" disabled={isLoading}>
-                {isLoading ? <Loader2 className="animate-spin" /> : "Sign Up"}
+                Sign Up
               </Button>
               
               <div className="text-center text-sm mt-4">
@@ -183,7 +188,7 @@ export default function OwnerSignupPage() {
               </div>
 
               <Button type="submit" className="w-full py-6 rounded-xl" disabled={isLoading}>
-                {isLoading ? <Loader2 className="animate-spin" /> : "Verify & Login"}
+                Verify & Login
               </Button>
 
               <Button 

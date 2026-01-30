@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useUserStore } from "@/lib/userStore";
+// --- IMPORT UNIVERSAL LOADER ---
+import { UniversalLoader } from "@/components/ui/universal-loader";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,40 +26,38 @@ export default function LoginPage() {
   const [otpSent, setOtpSent] = useState(false);
 
   const handleAuthSuccess = async (userId: string) => {
-  try {
-    setLoading(true);
-    
-    // 1. Fetch data
-    const { data: user, error: dbError } = await supabase
-      .from('users')
-      .select('name, role')
-      .eq('id', userId)
-      .single();
+    try {
+      setLoading(true);
+      
+      // 1. Fetch data
+      const { data: user, error: dbError } = await supabase
+        .from('users')
+        .select('name, role')
+        .eq('id', userId)
+        .single();
 
-    if (dbError || !user) throw new Error("User data not found");
+      if (dbError || !user) throw new Error("User data not found");
 
-    // 2. Set Zustand Store
-    setName(user.name);
+      // 2. Set Zustand Store
+      setName(user.name);
 
-    // 3. IMPORTANT: Wait for Supabase to finish setting the auth cookie
-    // Next.js client-side router needs a moment to catch up
-    await router.refresh();
-    
-    // 4. Role-Based Redirect
-    if (user.role === 'admin') {
-      // Use window.location.replace to prevent going "back" to login
-      window.location.replace("/admin");
-    } else if (user.role === 'owner') {
-      window.location.replace("/owner/dashboard");
-    } else {
-      window.location.replace("/");
+      // 3. IMPORTANT: Wait for Supabase to finish setting the auth cookie
+      await router.refresh();
+      
+      // 4. Role-Based Redirect
+      if (user.role === 'admin') {
+        window.location.replace("/admin");
+      } else if (user.role === 'owner') {
+        window.location.replace("/owner/dashboard");
+      } else {
+        window.location.replace("/");
+      }
+    } catch (err: any) {
+      console.error("Login Sync Error:", err.message);
+      setError("Account verified, but profile loading failed. Please try logging in again.");
+      setLoading(false);
     }
-  } catch (err: any) {
-    console.error("Login Sync Error:", err.message);
-    setError("Account verified, but profile loading failed. Please try logging in again.");
-    setLoading(false);
-  }
-};
+  };
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,6 +113,9 @@ export default function LoginPage() {
 
   return (
     <div className="container max-w-md mx-auto py-12 px-4">
+      {/* --- UNIVERSAL LOADER OVERLAY --- */}
+      {loading && <UniversalLoader />}
+
       <Card className="bg-card border-border rounded-3xl shadow-lg">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
@@ -153,7 +155,7 @@ export default function LoginPage() {
                   />
                 </div>
                 <Button type="submit" className="w-full py-6 rounded-full" disabled={loading}>
-                  {loading ? <Loader2 className="animate-spin" /> : "Login"}
+                  Login
                 </Button>
               </form>
             </TabsContent>
@@ -166,7 +168,7 @@ export default function LoginPage() {
                     <Input type="email" value={otpEmail} onChange={(e) => setOtpEmail(e.target.value)} required placeholder="Enter your email" className="bg-secondary" />
                   </div>
                   <Button type="submit" className="w-full py-6 rounded-full" disabled={loading}>
-                    {loading ? <Loader2 className="animate-spin" /> : "Send OTP"}
+                    Send OTP
                   </Button>
                 </form>
               ) : (
@@ -176,7 +178,7 @@ export default function LoginPage() {
                     <Input value={otpCode} onChange={(e) => setOtpCode(e.target.value)} className="text-center text-2xl tracking-widest bg-secondary" maxLength={6} required />
                   </div>
                   <Button type="submit" className="w-full py-6 rounded-full" disabled={loading}>
-                    {loading ? <Loader2 className="animate-spin" /> : "Verify & Login"}
+                    Verify & Login
                   </Button>
                   <Button type="button" variant="ghost" className="w-full" onClick={() => setOtpSent(false)}>Use a different email</Button>
                 </form>

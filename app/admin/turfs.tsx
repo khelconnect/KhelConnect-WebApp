@@ -32,6 +32,7 @@ interface Turf {
   location: string;
   image: string;
   price: number;
+  advance_price: number; // Added advance_price
   rating: number;
   amenities: string[];
   distance: string;
@@ -42,7 +43,7 @@ interface Turf {
   allow_rescheduling: boolean;
   allow_refunds: boolean;
   reschedule_window_days: number;
-  is_coming_soon: boolean; // Added
+  is_coming_soon: boolean; 
 }
 
 type TimeSlotDisplay = {
@@ -88,9 +89,9 @@ type PriceRule = {
 // ==================================================================
 function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onClose: () => void, onTurfAdded: () => void }) {
   const [formData, setFormData] = useState({
-    name: '', location: '', price: '', amenities: '',
+    name: '', location: '', price: '', advance_price: '500', amenities: '',
     distance: '', image: '', rating: '', sports: [] as string[], turf_owner_id: '',
-    is_coming_soon: false, // Added
+    is_coming_soon: false, 
   });
   const [owners, setOwners] = useState<any[]>([]);
 
@@ -131,6 +132,7 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
     const payload = {
       ...formData,
       price: parseInt(formData.price) || 0,
+      advance_price: parseInt(formData.advance_price) || 0, // Handle advance price
       rating: parseFloat(formData.rating) || null,
       amenities: formData.amenities.split(',').map((a) => a.trim()).filter(Boolean),
       sports: formData.sports,
@@ -139,13 +141,13 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
       allow_refunds: true,
       booking_window_days: 30,
       reschedule_window_days: 30,
-      is_coming_soon: formData.is_coming_soon // Added
+      is_coming_soon: formData.is_coming_soon 
     };
     try {
       const { error } = await supabase.from('turfs').insert([payload]);
       if (error) throw error;
       setFormData({
-        name: '', location: '', price: '', amenities: '',
+        name: '', location: '', price: '', advance_price: '500', amenities: '',
         distance: '', image: '', rating: '', sports: [], turf_owner_id: '',
         is_coming_soon: false,
       });
@@ -192,13 +194,35 @@ function AddTurfDialog({ isOpen, onClose, onTurfAdded }: { isOpen: boolean, onCl
               </Select>
             </div>
 
-            {Object.keys(formData).filter(k => k !== 'sports' && k !== 'turf_owner_id' && k !== 'is_coming_soon').map((key) => (
+            {/* Price Row */}
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <Label>Full Slot Price</Label>
+                    <Input
+                        value={formData.price}
+                        onChange={(e) => handleInputChange('price', e.target.value)}
+                        type="number"
+                        placeholder="e.g. 1500"
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label>Advance (Online)</Label>
+                    <Input
+                        value={formData.advance_price}
+                        onChange={(e) => handleInputChange('advance_price', e.target.value)}
+                        type="number"
+                        placeholder="e.g. 500"
+                    />
+                </div>
+            </div>
+
+            {Object.keys(formData).filter(k => k !== 'sports' && k !== 'turf_owner_id' && k !== 'is_coming_soon' && k !== 'price' && k !== 'advance_price').map((key) => (
               <div key={key} className="space-y-2">
                 <Label className="capitalize">{key.replace('_', ' ')}</Label>
                 <Input
                   value={(formData as any)[key]}
                   onChange={(e) => handleInputChange(key, e.target.value)}
-                  type={key === 'price' || key === 'rating' ? 'number' : 'text'}
+                  type={key === 'rating' ? 'number' : 'text'}
                   placeholder={`Enter ${key.replace('_', ' ')}`}
                 />
               </div>
@@ -385,6 +409,8 @@ function TurfListingGrid({ onSelectTurf }: { onSelectTurf: (turf: Turf, sport: s
   );
 }
 
+// ... (Previous imports and AddTurfDialog/TurfListingGrid code remain the same) ...
+
 // ==================================================================
 // PHASE 2: Turf Detail Dashboard View
 // ==================================================================
@@ -395,12 +421,16 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
   const [manualBlocks, setManualBlocks] = useState<ManualBlockType[]>([]);
   const [isBookingsLoading, setIsBookingsLoading] = useState(true);
   
+  // Edit Modes
   const [isEditingDetails, setIsEditingDetails] = useState(false);
-  const [inlineData, setInlineData] = useState<Turf>(turf);
-  
   const [isPriceEditing, setIsPriceEditing] = useState(false);
+
+  // Data States
+  const [inlineData, setInlineData] = useState<Turf>(turf);
   const [inlineBasePrice, setInlineBasePrice] = useState(turf.price.toString());
+  const [inlineAdvancePrice, setInlineAdvancePrice] = useState(turf.advance_price?.toString() || '0');
   
+  // Pricing Rules States
   const [dayPrice, setDayPrice] = useState("");
   const [periodPrices, setPeriodPrices] = useState({ day: "", evening: "" });
   const [weekdayPrice, setWeekdayPrice] = useState("");
@@ -408,6 +438,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   
+  // Dialogs
   const [showSlotPriceDialog, setShowSlotPriceDialog] = useState(false);
   const [showDayPriceDialog, setShowDayPriceDialog] = useState(false);
   const [showPeriodPriceDialog, setShowPeriodPriceDialog] = useState(false);
@@ -415,11 +446,12 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
   const [showConflictDialog, setShowConflictDialog] = useState(false);
   const [currentPriceChange, setCurrentPriceChange] = useState<any>(null);
   const [conflictingRule, setConflictingRule] = useState<PriceRule | null>(null);
-  
-  const [owners, setOwners] = useState<any[]>([]);
-  const [pricingRules, setPricingRules] = useState<any[]>([]);
   const [showRuleDialog, setShowRuleDialog] = useState(false);
   const [ruleForm, setRuleForm] = useState<any>({ ruleType: 'slot', dayType: 'weekday', priority: '1', price: '' });
+  
+  // Fetched Lists
+  const [owners, setOwners] = useState<any[]>([]);
+  const [pricingRules, setPricingRules] = useState<any[]>([]);
 
   const fetchAllTimeSlots = async () => {
     try {
@@ -484,6 +516,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
       image: inlineData.image,
       turf_owner_id: inlineData.turf_owner_id,
       price: parseInt(inlineBasePrice),
+      advance_price: parseInt(inlineAdvancePrice) || 0, // Save Advance Price
       rating: parseFloat(inlineData.rating as any) || null,
       amenities: Array.isArray(inlineData.amenities) ? inlineData.amenities : (inlineData.amenities as string).split(',').map(s => s.trim()),
       sports: inlineData.sports, 
@@ -491,7 +524,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
       allow_refunds: inlineData.allow_refunds,
       booking_window_days: parseInt(inlineData.booking_window_days as any) || 30,
       reschedule_window_days: parseInt(inlineData.reschedule_window_days as any) || 30,
-      is_coming_soon: inlineData.is_coming_soon // Added
+      is_coming_soon: inlineData.is_coming_soon 
     };
     try {
       const { data, error } = await supabase.from('turfs').update(updatePayload).eq('id', turf.id).select().single();
@@ -499,7 +532,7 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
       setInlineData(data); 
       setIsEditingDetails(false);
       setIsPriceEditing(false);
-      alert("Details saved successfully!");
+      alert("Changes saved successfully!");
     } catch (error: any) { alert("Error saving details: " + error.message); }
   };
 
@@ -652,9 +685,11 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
       <div className="flex justify-between items-center mb-4">
         <Button variant="ghost" onClick={onBack}><ArrowLeft className="mr-2 h-4 w-4" /> Back to All Turfs</Button>
         <div className="flex gap-2">
+          {/* PRICING TOGGLE */}
           <Button variant="outline" onClick={() => setIsPriceEditing(p => !p)}>
             {isPriceEditing ? <XCircle className="mr-2 h-4 w-4" /> : <Settings className="mr-2 h-4 w-4" />} {isPriceEditing ? "Cancel Pricing" : "Edit Pricing"}
           </Button>
+          {/* DETAILS TOGGLE */}
           <Button variant="ghost" size="icon" onClick={() => setIsEditingDetails(p => !p)}><Edit className="h-5 w-5" /></Button>
         </div>
       </div>
@@ -676,12 +711,40 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
               ) : (
                 <Input value={inlineData.name} onChange={(e) => setInlineData(p => ({...p, name: e.target.value}))} className="text-3xl font-bold w-full md:w-2/3" />
               )}
-              {isEditingDetails && <Button size="sm" onClick={handleSaveDetails} className="ml-auto">Save Details</Button>}
+              
+              {/* --- SAVE BUTTON: VISIBLE IF EITHER MODE IS ON --- */}
+              {(isEditingDetails || isPriceEditing) && (
+                <Button size="sm" onClick={handleSaveDetails} className="ml-auto">Save Changes</Button>
+              )}
             </div>
 
             <div className="flex items-center text-muted-foreground"><MapPin className="h-4 w-4 mr-2" />{!isEditingDetails ? <p>{inlineData.location}</p> : <Input value={inlineData.location} onChange={(e) => setInlineData(p => ({...p, location: e.target.value}))} className="flex-1" />}</div>
 
-            <div className="flex items-center text-muted-foreground"><span className="text-xl mr-2">₹</span>{!isPriceEditing ? <p className="text-xl font-bold text-primary">{inlineData.price} <span className="text-sm font-normal text-muted-foreground">base price / 30 min</span></p> : <Input type="number" value={inlineBasePrice} onChange={(e) => setInlineBasePrice(e.target.value)} className="w-32 text-xl" />}</div>
+            {/* --- PRICE ROW: EDITABLE IN PRICE MODE --- */}
+            <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center text-muted-foreground">
+                    <span className="text-xl mr-2">₹</span>
+                    {!isPriceEditing ? (
+                        <p className="text-xl font-bold text-primary">{inlineData.price} <span className="text-sm font-normal text-muted-foreground">base / 30m</span></p> 
+                    ) : (
+                        <div className="space-y-1">
+                            <Label className="text-xs">Base Price</Label>
+                            <Input type="number" value={inlineBasePrice} onChange={(e) => setInlineBasePrice(e.target.value)} className="w-32 text-xl" />
+                        </div>
+                    )}
+                </div>
+                <div className="flex items-center text-muted-foreground">
+                    <span className="text-xl mr-2">₹</span>
+                    {!isPriceEditing ? (
+                        <p className="text-xl font-bold text-green-600">{inlineData.advance_price} <span className="text-sm font-normal text-muted-foreground">advance</span></p>
+                    ) : (
+                        <div className="space-y-1">
+                            <Label className="text-xs text-green-600">Advance (Pay Now)</Label>
+                            <Input type="number" value={inlineAdvancePrice} onChange={(e) => setInlineAdvancePrice(e.target.value)} className="w-32 text-xl border-green-200 focus-visible:ring-green-500" />
+                        </div>
+                    )}
+                </div>
+            </div>
 
             <EditableField label="Amenities" value={Array.isArray(inlineData.amenities) ? inlineData.amenities.join(', ') : ''} isEditing={isEditingDetails} onChange={(v) => setInlineData(p => ({...p, amenities: v.split(',').map(s => s.trim())}))} />
 
@@ -754,7 +817,6 @@ function TurfDetailDashboard({ turf, sport, onBack }: { turf: Turf, sport: strin
                  </div>
                </div>
 
-               {/* COMING SOON STATUS TOGGLE */}
                <div className="flex flex-col space-y-2 col-span-full mt-4 p-4 border-2 border-dashed border-orange-500/30 rounded-2xl bg-orange-500/5">
                  <div className="flex flex-col space-y-1">
                    <Label className="text-orange-600 font-bold flex items-center gap-2">
