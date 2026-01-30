@@ -14,6 +14,8 @@ import { MainNavbar } from "@/components/main-navbar"
 import { Facebook, Twitter, Instagram } from "lucide-react"
 import { AppUpdater } from "@/components/AppUpdater" // 1. Import the updater
 import { VersionDisplay } from "@/components/VersionDisplay";
+import Script from "next/script"
+import AuthListener from "@/components/AuthListener"
 
 const qualyNeue = localFont({
   src: [
@@ -188,7 +190,7 @@ export default function RootLayout({
                     <h3 className="font-bold mb-5 text-lg">Contact</h3>
                     <address className="not-italic text-muted-foreground">
                       <p className="mt-3">Email: khelconnectindia@gmail.com</p>
-                      <p>Phone: +91 8777527449</p>
+                      <p>Phone: +91 8282053626</p>
                       <br />
                       <p>Kolkata, West Bengal, India</p>
                     </address>
