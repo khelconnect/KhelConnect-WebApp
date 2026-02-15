@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
-  Clock, Users, Plus, Trash2, AlertTriangle, CheckCircle, XCircle, Settings, LogOut, CalendarIcon, Lock, StickyNote
+  Clock, Users, Plus, Trash2, AlertTriangle, CheckCircle, XCircle, Settings, LogOut, CalendarIcon, Lock, StickyNote, ChevronDown
 } from "lucide-react"
 import { Calendar } from "@/components/ui/calendar"
 import { format, isPast, isSameDay } from "date-fns"
@@ -18,12 +18,10 @@ import {
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-// --- IMPORT UNIVERSAL LOADER ---
 import { UniversalLoader } from "@/components/ui/universal-loader"
 
 // --- TYPES ---
@@ -67,12 +65,12 @@ type GroupedBookingType = {
 };
 
 type ManualBlockType = { id: string; date: string; slot: string; slotId: string; reason: string | null }
-type OwnerType = { id: string; name: string; turf_name: string }
+type OwnerType = { id: string; name: string; }
 type TurfType = { id: string; name: string; price: number; booking_window_days: number; pending_booking_window_days: number | null }
 
-// --- HELPER COMPONENT (Updated) ---
+// --- HELPER COMPONENT ---
 function DashboardNotice({ message, isError = false }: { message: string, isError?: boolean }) {
-  if (!isError) return <UniversalLoader />; // Use Universal Loader for loading state
+  if (!isError) return <UniversalLoader />;
   
   return (
     <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-6">
@@ -121,16 +119,18 @@ export default function OwnerDashboardPage() {
   const [activeTab, setActiveTab] = useState("bookings")
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   
-  // Data State
   const [owner, setOwner] = useState<OwnerType | null>(null)
-  const [turf, setTurf] = useState<TurfType | null>(null)
+  
+  // Multi-Turf State
+  const [allTurfs, setAllTurfs] = useState<TurfType[]>([])
+  const [selectedTurf, setSelectedTurf] = useState<TurfType | null>(null)
+
   const [timeSlots, setTimeSlots] = useState<TimeSlotDisplay[]>([])
   const [bookings, setBookings] = useState<BookingType[]>([]) 
   const [groupedBookings, setGroupedBookings] = useState<GroupedBookingType[]>([]) 
   const [manualBlocks, setManualBlocks] = useState<ManualBlockType[]>([])
   const [pendingConfirmation, setPendingConfirmation] = useState<GroupedBookingType[]>([])
   
-  // UI/Loading State
   const [isInitializing, setIsInitializing] = useState(true)
   const [isBookingsLoading, setIsBookingsLoading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -141,18 +141,8 @@ export default function OwnerDashboardPage() {
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
   const [requestedDays, setRequestedDays] = useState("")
 
-  // Form State
-  const [newBooking, setNewBooking] = useState({
-    sport: "football", slotId: "", comments: ""
-  })
-  
-  const [newBlock, setNewBlock] = useState({ 
-    slotId: "", 
-    sport: "football",
-    reason: "", 
-    otherReason: "",
-    comments: "" 
-  })
+  const [newBooking, setNewBooking] = useState({ sport: "football", slotId: "", comments: "" })
+  const [newBlock, setNewBlock] = useState({ slotId: "", sport: "football", reason: "", otherReason: "", comments: "" })
 
   // --- 1. INITIALIZE DASHBOARD ---
   useEffect(() => {
@@ -165,7 +155,7 @@ export default function OwnerDashboardPage() {
 
         const ownerId = user.id
         const { data: ownerData } = await supabase.from("users").select("id, name").eq("id", ownerId).maybeSingle()
-        setOwner({ id: ownerId, name: ownerData?.name || user.user_metadata?.full_name || "Partner", turf_name: "" });
+        setOwner({ id: ownerId, name: ownerData?.name || user.user_metadata?.full_name || "Partner" });
 
         const { data: slotsData } = await supabase.from("time_slots").select("id, start_time, end_time, period").order("start_time")
         if (slotsData) {
@@ -174,16 +164,20 @@ export default function OwnerDashboardPage() {
           })))
         }
 
-        const { data: turfData } = await supabase.from("turfs").select("id, name, price, booking_window_days, pending_booking_window_days").eq("owner_id", ownerId).maybeSingle()
-        if (turfData) {
-          setTurf(turfData);
-          setOwner(prev => prev ? ({ ...prev, turf_name: turfData.name }) : null);
+        // --- FIX: Querying 'turf_owner_id' instead of 'owner_id' ---
+        const { data: turfsData } = await supabase.from("turfs")
+            .select("id, name, price, booking_window_days, pending_booking_window_days")
+            .eq("turf_owner_id", ownerId);
+        
+        if (turfsData && turfsData.length > 0) {
+          setAllTurfs(turfsData);
+          setSelectedTurf(turfsData[0]); 
         } else {
-          setTurf(null); 
+          setAllTurfs([]);
+          setSelectedTurf(null); 
         }
       } catch (error: any) {
         if (error.message.includes("Auth")) setPageError("Authentication failed.");
-        else setTurf(null);
       } finally {
         setIsInitializing(false)
       }
@@ -191,78 +185,60 @@ export default function OwnerDashboardPage() {
     initializeDashboard()
   }, [router])
 
-// --- 2. FETCH BOOKINGS & BLOCKS (FIXED) ---
-  const fetchBookingsForDate = useCallback(async () => {
-    if (isInitializing || !turf || timeSlots.length === 0) return
-    setIsBookingsLoading(true)
-    const formattedDate = format(selectedDate, "yyyy-MM-dd")
+  // --- 2. FETCH BOOKINGS (Depends on selectedTurf) ---
+  const fetchBookingsForDate = useCallback(async () => {
+    if (isInitializing || !selectedTurf || timeSlots.length === 0) return
+    setIsBookingsLoading(true)
+    const formattedDate = format(selectedDate, "yyyy-MM-dd")
 
-    try {
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("*, users (name, phone, email)")
-        .eq("turf_id", turf.id)
-        .eq("date", formattedDate)
-        // --- FIX: Filter out cancelled bookings here ---
+    try {
+      const { data, error } = await supabase
+        .from("bookings")
+        .select("*, users (name, phone, email)")
+        .eq("turf_id", selectedTurf.id)
+        .eq("date", formattedDate)
         .neq("status", "cancelled") 
-        // Optional: If you want to see cancelled bookings in the list but not have them block slots,
-        // you can remove the line above, but you must update the isSlotTaken logic below.
-        // For dashboard clarity, it's usually better to fetch them but filter them in JS.
-        // BUT for availability correctness, let's fetch EVERYTHING and handle status in the map loop.
         
-      if (error) throw error
+      if (error) throw error
 
-      const newBookings: BookingType[] = []
-      const newBlocks: ManualBlockType[] = []
+      const newBookings: BookingType[] = []
+      const newBlocks: ManualBlockType[] = []
 
-      data.forEach((b) => {
-        // Skip processing if status is cancelled (just to be safe)
+      data.forEach((b) => {
         if (b.status === 'cancelled') return;
 
-        b.slot.forEach((slotId: string) => {
-          const timeSlot = timeSlots.find(ts => ts.id === slotId)
-          const displayTime = timeSlot ? timeSlot.time : "Unknown"
-          const endTime = timeSlot ? timeSlot.endTime : "00:00"
-          
-          if (b.status === "blocked") {
-            newBlocks.push({
-              id: b.id, date: b.date, slot: displayTime, slotId: slotId, reason: b.notes || b.sport,
-            })
-            // Also add to bookings so it shows in the list view
-            newBookings.push({
-                id: b.id, date: b.date, slot: displayTime, slotId: slotId, endTime: endTime,
-                customerName: `Blocked: ${b.notes || b.sport}`,
-                customerPhone: "N/A", customerEmail: "N/A",
-                sport: b.sport, price: 0, status: "blocked",
-                payment_status: "n/a", refund_amount: null, source: "manual",
-                notes: b.notes
-            })
-          } else {
-            newBookings.push({
-              id: b.id, date: b.date, slot: displayTime, slotId: slotId, endTime: endTime,
-              customerName: b.users?.name || b.name || "Walk-in Customer", 
-              customerPhone: b.users?.phone || b.phone || "N/A",
-              customerEmail: b.users?.email || b.email || "N/A",
-              sport: b.sport, price: b.amount, status: b.status,
-              payment_status: b.payment_status, refund_amount: b.refund_amount,
-              source: b.user_id ? "app" : "manual",
-              notes: b.notes
-            })
-          }
-        })
-      })
-      setBookings(newBookings)
-      setManualBlocks(newBlocks)
-    } catch (error: any) {
-      console.error("Fetch bookings error:", error);
-    } finally {
-      setIsBookingsLoading(false)
-    }
-  }, [selectedDate, turf, timeSlots, isInitializing]);
+        b.slot.forEach((slotId: string) => {
+          const timeSlot = timeSlots.find(ts => ts.id === slotId)
+          const displayTime = timeSlot ? timeSlot.time : "Unknown"
+          const endTime = timeSlot ? timeSlot.endTime : "00:00"
+          
+          if (b.status === "blocked") {
+            newBlocks.push({ id: b.id, date: b.date, slot: displayTime, slotId: slotId, reason: b.notes || b.sport })
+            newBookings.push({
+                id: b.id, date: b.date, slot: displayTime, slotId: slotId, endTime: endTime,
+                customerName: `Blocked: ${b.notes || b.sport}`, customerPhone: "N/A", customerEmail: "N/A",
+                sport: b.sport, price: 0, status: "blocked", payment_status: "n/a", refund_amount: null, source: "manual", notes: b.notes
+            })
+          } else {
+            newBookings.push({
+              id: b.id, date: b.date, slot: displayTime, slotId: slotId, endTime: endTime,
+              customerName: b.users?.name || b.name || "Walk-in Customer", 
+              customerPhone: b.users?.phone || b.phone || "N/A",
+              customerEmail: b.users?.email || b.email || "N/A",
+              sport: b.sport, price: b.amount, status: b.status,
+              payment_status: b.payment_status, refund_amount: b.refund_amount, source: b.user_id ? "app" : "manual", notes: b.notes
+            })
+          }
+        })
+      })
+      setBookings(newBookings)
+      setManualBlocks(newBlocks)
+    } catch (error: any) { console.error("Fetch bookings error:", error); } 
+    finally { setIsBookingsLoading(false) }
+  }, [selectedDate, selectedTurf, timeSlots, isInitializing]);
 
   useEffect(() => { fetchBookingsForDate() }, [fetchBookingsForDate]);
 
-  // --- 3. GROUP BOOKINGS ---
   useEffect(() => {
     if (timeSlots.length === 0) return;
     const groups: { [key: string]: BookingType[] } = {};
@@ -277,14 +253,12 @@ export default function OwnerDashboardPage() {
         startTime: sorted[0].slot, endTime: sorted[sorted.length - 1].endTime,
         customerName: sorted[0].customerName, customerPhone: sorted[0].customerPhone, customerEmail: sorted[0].customerEmail,
         sport: sorted[0].sport, price: sorted[0].price, status: sorted[0].status,
-        payment_status: sorted[0].payment_status, refund_amount: sorted[0].refund_amount, source: sorted[0].source,
-        notes: sorted[0].notes
+        payment_status: sorted[0].payment_status, refund_amount: sorted[0].refund_amount, source: sorted[0].source, notes: sorted[0].notes
       };
     });
     setGroupedBookings(newGroupedBookings);
   }, [bookings, timeSlots]);
 
-  // --- 4. PENDING CONFIRMATION ---
   useEffect(() => {
     const checkPendingConfirmations = () => {
       const now = new Date()
@@ -296,77 +270,50 @@ export default function OwnerDashboardPage() {
           return isPast(bookingEndDateTime)
         })
         setPendingConfirmation(pending)
-      } else {
-        setPendingConfirmation([])
-      }
+      } else { setPendingConfirmation([]) }
     }
     checkPendingConfirmations()
     const interval = setInterval(checkPendingConfirmations, 300000) 
     return () => clearInterval(interval)
   }, [groupedBookings, selectedDate, isInitializing])
 
-
-  // --- HANDLERS ---
   const handleRequestWindowChange = async () => {
-    if (!turf || !requestedDays) return;
+    if (!selectedTurf || !requestedDays) return;
     try {
-      await supabase.from("turfs").update({ pending_booking_window_days: parseInt(requestedDays) }).eq("id", turf.id);
+      await supabase.from("turfs").update({ pending_booking_window_days: parseInt(requestedDays) }).eq("id", selectedTurf.id);
       alert("Request sent."); setShowSettingsDialog(false);
     } catch (e) { alert("Error sending request."); }
   };
 
-  // HANDLER: Add Manual Booking
   const handleAddBooking = useCallback(async () => {
-    if (!newBooking.slotId || !turf) return alert("Please select a slot");
+    if (!newBooking.slotId || !selectedTurf) return alert("Please select a slot");
     setIsSubmitting(true);
     try {
         const { error: bookingError } = await supabase.from("bookings").insert({
-            turf_id: turf.id, 
-            date: format(selectedDate, "yyyy-MM-dd"),
-            slot: [newBooking.slotId], 
-            status: "confirmed", 
-            payment_status: "paid", 
-            amount: Number(turf.price || 0), // Use base price
-            sport: newBooking.sport,
-            user_id: null, 
-            notes: newBooking.comments
+            turf_id: selectedTurf.id, date: format(selectedDate, "yyyy-MM-dd"), slot: [newBooking.slotId], 
+            status: "confirmed", payment_status: "paid", amount: Number(selectedTurf.price || 0),
+            sport: newBooking.sport, user_id: null, notes: newBooking.comments
         });
-
         if (bookingError) throw bookingError;
-        
-        setIsBookingModalOpen(false); 
-        alert("Booking added!");
+        setIsBookingModalOpen(false); alert("Booking added!");
         setNewBooking({ sport: "football", slotId: "", comments: "" });
         fetchBookingsForDate(); 
-    } catch (e: any) { 
-        console.error(e); alert("Error: " + e.message); 
-    } finally { setIsSubmitting(false); }
-  }, [newBooking, turf, selectedDate, fetchBookingsForDate]);
+    } catch (e: any) { console.error(e); alert("Error: " + e.message); } finally { setIsSubmitting(false); }
+  }, [newBooking, selectedTurf, selectedDate, fetchBookingsForDate]);
 
-  // UPDATED HANDLER: Add Block with Sport & Comments
   const handleAddBlock = async () => {
-      if(!newBlock.slotId || !turf) return;
+      if(!newBlock.slotId || !selectedTurf) return;
       setIsSubmitting(true);
-      
       let finalReason = newBlock.reason;
       if (newBlock.reason === "Others") finalReason = newBlock.otherReason;
       const fullNotes = newBlock.comments ? `${finalReason} - ${newBlock.comments}` : finalReason;
-
       try {
           const { error } = await supabase.from("bookings").insert({
-              turf_id: turf.id, 
-              date: format(selectedDate, "yyyy-MM-dd"), 
-              slot: [newBlock.slotId], 
-              status: "blocked", 
-              payment_status: "n/a", 
-              amount: 0, 
-              sport: newBlock.sport,
-              notes: fullNotes,
-              user_id: null 
+              turf_id: selectedTurf.id, date: format(selectedDate, "yyyy-MM-dd"), slot: [newBlock.slotId], 
+              status: "blocked", payment_status: "n/a", amount: 0, sport: newBlock.sport, notes: fullNotes, user_id: null 
           });
           if(error) throw error;
-          setIsBlockModalOpen(false); 
-          alert("Slot blocked.");
+          setIsBlockModalOpen(false); alert("Slot blocked.");
           setNewBlock({ slotId: "", sport: "football", reason: "", otherReason: "", comments: "" }); 
           fetchBookingsForDate();
       } catch(e: any) { console.error(e); alert("Error: " + e.message); } finally { setIsSubmitting(false); }
@@ -391,32 +338,48 @@ export default function OwnerDashboardPage() {
 
   const handleSignOut = async () => { await supabase.auth.signOut(); router.push("/owner/login"); };
 
-  // --- RENDER ---
   const totalRevenue = groupedBookings.reduce((sum, g) => g.payment_status === "paid" ? sum + g.price : sum, 0);
   
   if (isInitializing) return <DashboardNotice message="Loading..." />;
   if (pageError) return <DashboardNotice message={pageError} isError />;
-  if (!turf) return <UnverifiedDashboard ownerName={owner?.name} />;
+  if (!selectedTurf) return <UnverifiedDashboard ownerName={owner?.name} />;
 
-  // Updated Helper
-const isSlotTaken = (slotId: string) => {
-  return bookings.some(b => 
-    b.slotId === slotId && 
-    b.status !== 'cancelled' // Explicit check
-  ) || manualBlocks.some(b => b.slotId === slotId);
-}; 
-const isSlotInPast = (endTime: string) => {
+  const isSlotTaken = (slotId: string) => {
+    return bookings.some(b => b.slotId === slotId && b.status !== 'cancelled') || manualBlocks.some(b => b.slotId === slotId);
+  }; 
+  const isSlotInPast = (endTime: string) => {
       const [h, m] = endTime.split(':').map(Number);
       return isPast(new Date(selectedDate).setHours(h, m, 0, 0));
   };
 
   return (
     <div className="space-y-6 md:space-y-8">
-      {/* Header */}
+      {/* Header with Turf Switcher */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold mb-2">Turf Owner Dashboard</h1>
-          <p className="text-muted-foreground">Manage bookings for <span className="font-medium text-primary">{turf.name}</span></p>
+          {/* ALWAYS show selector if data exists (even if only 1 turf) to confirm system state */}
+          {allTurfs.length > 0 ? (
+             <div className="flex flex-col">
+                <Label className="text-muted-foreground text-xs uppercase font-bold mb-1">Active Turf</Label>
+                <Select 
+                    value={selectedTurf.id} 
+                    onValueChange={(id) => {
+                        const newTurf = allTurfs.find(t => t.id === id);
+                        if(newTurf) setSelectedTurf(newTurf);
+                    }}
+                >
+                    <SelectTrigger className="w-full md:w-[300px] h-12 text-2xl font-bold border-none bg-transparent p-0 shadow-none focus:ring-0 px-0">
+                        <SelectValue>{selectedTurf.name}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                        {allTurfs.map(t => <SelectItem key={t.id} value={t.id} className="font-bold">{t.name}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+             </div>
+          ) : (
+             <h1 className="text-2xl sm:text-3xl font-bold mb-2">{selectedTurf.name} Dashboard</h1>
+          )}
+          <p className="text-muted-foreground">Manage bookings for <span className="font-medium text-primary">{selectedTurf.name}</span></p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" className="gap-2" onClick={() => setShowSettingsDialog(true)}>
@@ -607,7 +570,7 @@ const isSlotInPast = (endTime: string) => {
       </div>
 
       {/* --- DIALOGS --- */}
-      {/* 1. Add Booking Dialog (Simplified) */}
+      {/* 1. Add Booking Dialog */}
       <Dialog open={isBookingModalOpen} onOpenChange={setIsBookingModalOpen}>
         <DialogContent className="sm:max-w-md bg-card border-border">
             {isSubmitting && <UniversalLoader />}

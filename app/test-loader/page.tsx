@@ -1,6 +1,6 @@
 "use client"
 
-import { UniversalLoader } from "@/components/ui/universal-loader"
+import { UniversalLoader } from "@/components/ui/universal-loader";
 
 export default function TestLoaderPage() {
   // We simply return the loader component directly.
