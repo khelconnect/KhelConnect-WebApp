@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,11 +10,14 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/lib/supabaseClient";
 import { useUserStore } from "@/lib/userStore";
-// --- IMPORT UNIVERSAL LOADER ---
 import { UniversalLoader } from "@/components/ui/universal-loader";
 
-export default function LoginPage() {
+// --- WE EXTRACT THE MAIN CONTENT SO WE CAN WRAP IT IN SUSPENSE ---
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirectTo"); // <-- Grab the URL parameter
+
   const setName = useUserStore((state) => state.setName);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -44,8 +47,11 @@ export default function LoginPage() {
       // 3. IMPORTANT: Wait for Supabase to finish setting the auth cookie
       await router.refresh();
       
-      // 4. Role-Based Redirect
-      if (user.role === 'admin') {
+      // 4. Smart Redirect Logic
+      if (redirectTo) {
+        // If a redirect URL was provided (like the tournament join link), go there!
+        window.location.replace(decodeURIComponent(redirectTo));
+      } else if (user.role === 'admin') {
         window.location.replace("/admin");
       } else if (user.role === 'owner') {
         window.location.replace("/owner/dashboard");
@@ -113,7 +119,6 @@ export default function LoginPage() {
 
   return (
     <div className="container max-w-md mx-auto py-12 px-4">
-      {/* --- UNIVERSAL LOADER OVERLAY --- */}
       {loading && <UniversalLoader />}
 
       <Card className="bg-card border-border rounded-3xl shadow-lg">
@@ -191,5 +196,15 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// --- THE MAIN PAGE COMPONENT ---
+// Wraps the login content in Suspense to safely read URL parameters in Next.js
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<UniversalLoader />}>
+      <LoginContent />
+    </Suspense>
   );
 }
