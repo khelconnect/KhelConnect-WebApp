@@ -5,7 +5,7 @@ import { useParams } from "next/navigation"
 import { supabase } from "@/lib/supabaseClient"
 import { 
   Trophy, Calendar, MapPin, Users, Shield, Copy, CheckCircle, 
-  XCircle, ChevronRight, Share2, Plus, Clock, UserPlus
+  XCircle, ChevronRight, Share2, Plus, Clock, UserPlus 
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,7 +15,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
 import { UniversalLoader } from "@/components/ui/universal-loader"
 
 export default function TournamentPortal() {
@@ -32,45 +31,51 @@ export default function TournamentPortal() {
   const [availableTeams, setAvailableTeams] = useState<any[]>([])
   const [myTeam, setMyTeam] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isSubmittingJoin, setIsSubmittingJoin] = useState(false)
   
   // Form States
   const [teamName, setTeamName] = useState("")
   const [selectedTeam, setSelectedTeam] = useState<any>(null)
   const [joinMessage, setJoinMessage] = useState("")
 
-  const [isSubmittingJoin, setIsSubmittingJoin] = useState(false)
-
   // --- INITIAL DATA FETCH ---
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true)
       
-      // 1. Get current user
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
+      try {
+        // 1. Get current user
+        const { data: { user } } = await supabase.auth.getUser()
+        setUser(user)
 
-      // 2. Fetch Tournament details
-      const { data: tData } = await supabase
-        .from('tournaments')
-        .select('*, turfs(name, location)')
-        .eq('id', tournamentId)
-        .single()
-      
-      setTournament(tData)
+        // 2. Fetch Tournament details
+        const { data: tData, error } = await supabase
+          .from('tournaments')
+          .select('*, turfs(name, location)')
+          .eq('id', tournamentId)
+          .single()
+        
+        if (error || !tData) {
+          setTournament(null)
+          setIsLoading(false)
+          return
+        }
+        
+        setTournament(tData)
 
-      // 3. Fetch all teams for this tournament
-      if (tData) {
+        // 3. Fetch all teams for this tournament
         await fetchTeamsAndRosters(tData.max_players_per_team, user?.id)
+      } catch (err) {
+        console.error("Failed to load tournament:", err)
+      } finally {
+        setIsLoading(false)
       }
-      
-      setIsLoading(false)
     }
     
     if (tournamentId) loadData()
   }, [tournamentId])
 
   const fetchTeamsAndRosters = async (maxPlayers: number, userId?: string) => {
-    // Fetch teams and their member count
     const { data: teams } = await supabase
       .from('tournament_teams')
       .select(`
@@ -86,12 +91,17 @@ export default function TournamentPortal() {
         const approvedMembers = t.team_members.filter((m: any) => m.status === 'approved')
         const pendingMembers = t.team_members.filter((m: any) => m.status === 'pending')
         
-        // Check if current user is the captain of this team
-        if (userId && t.captain_id === userId) {
+        // Check roles
+        const isCaptain = userId && t.captain_id === userId
+        const isPlayer = userId && approvedMembers.some((m: any) => m.user_id === userId)
+
+        // If they are the captain OR an approved player, load the team dashboard
+        if (isCaptain || isPlayer) {
           myManagedTeam = {
             ...t,
             roster: approvedMembers,
-            pendingRequests: pendingMembers
+            pendingRequests: pendingMembers,
+            isCaptain: !!isCaptain // Boolean flag to control UI visibility
           }
         }
 
@@ -137,12 +147,18 @@ export default function TournamentPortal() {
     if (teamError) return toast.error(teamError.message)
 
     // 2. Add Captain to team_members automatically
-    await supabase.from('team_members').insert({
+    const { error: memberError } = await supabase.from('team_members').insert({
+      tournament_id: tournamentId,
       team_id: newTeam.id,
       user_id: user.id,
       role: 'captain',
       status: 'approved'
     })
+    
+    if (memberError) {
+      toast.error("You are already part of a team in this tournament!")
+      return
+    }
 
     toast.success(`${teamName} created successfully!`)
     setIsCreateTeamOpen(false)
@@ -150,56 +166,65 @@ export default function TournamentPortal() {
     setActiveTab("manage")
   }
 
-const handleRequestToJoin = async (e: React.FormEvent) => {
-  e.preventDefault()
-  if (!user) return toast.error("Please log in to join a team!")
+  const handleRequestToJoin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return toast.error("Please log in to join a team!")
 
-  setIsSubmittingJoin(true)
+    setIsSubmittingJoin(true)
 
-  try {
-    // 1. Check if they are already in THIS team
-    const { data: existingMember } = await supabase
-      .from('team_members')
-      .select('status')
-      .eq('team_id', selectedTeam.id)
-      .eq('user_id', user.id)
-      .maybeSingle()
+    try {
+      // 1. Check if they are already in THIS team
+      const { data: existingMember } = await supabase
+        .from('team_members')
+        .select('status')
+        .eq('team_id', selectedTeam.id)
+        .eq('user_id', user.id)
+        .maybeSingle()
 
-    if (existingMember) {
-      if (existingMember.status === 'approved') {
-        toast.error("You are already an approved member of this team!")
-      } else if (existingMember.status === 'pending') {
-        toast.error("You already have a pending request for this team.")
-      } else {
-        toast.error("Your previous request to join was declined.")
+      if (existingMember) {
+        if (existingMember.status === 'approved') {
+          toast.error("You are already an approved member of this team!")
+        } else if (existingMember.status === 'pending') {
+          toast.error("You already have a pending request for this team.")
+        } else {
+          toast.error("Your previous request to join was declined.")
+        }
+        setIsJoinTeamOpen(false)
+        setIsSubmittingJoin(false)
+        return
       }
+
+      // 2. If clear, insert the request
+      const { error } = await supabase.from('team_members').insert({
+        tournament_id: tournamentId,
+        team_id: selectedTeam.id,
+        user_id: user.id,
+        role: 'player',
+        status: 'pending',
+        join_message: joinMessage
+      })
+
+      if (error) {
+        if (error.code === '23505') { 
+          toast.error("You are already in a team or have a pending request for this tournament!")
+        } else {
+          toast.error(error.message)
+        }
+        setIsSubmittingJoin(false)
+        return
+      }
+
+      toast.success(`Request sent! The captain of ${selectedTeam.name} will be notified.`)
       setIsJoinTeamOpen(false)
+      setJoinMessage("")
+
+    } catch (error: any) {
+      console.error("Join Request Error:", error)
+      toast.error(error.message || "Something went wrong sending your request.")
+    } finally {
       setIsSubmittingJoin(false)
-      return
     }
-
-    // 2. If clear, insert the request
-    const { error } = await supabase.from('team_members').insert({
-      team_id: selectedTeam.id,
-      user_id: user.id,
-      role: 'player',
-      status: 'pending',
-      join_message: joinMessage
-    })
-
-    if (error) throw error
-
-    toast.success(`Request sent! The captain of ${selectedTeam.name} will be notified.`)
-    setIsJoinTeamOpen(false)
-    setJoinMessage("") // clear the form
-
-  } catch (error: any) {
-    console.error("Join Request Error:", error)
-    toast.error(error.message || "Something went wrong sending your request.")
-  } finally {
-    setIsSubmittingJoin(false)
   }
-}
 
   const handleProcessRequest = async (memberId: string, action: 'approve' | 'reject') => {
     const newStatus = action === 'approve' ? 'approved' : 'rejected'
@@ -215,7 +240,46 @@ const handleRequestToJoin = async (e: React.FormEvent) => {
     await fetchTeamsAndRosters(tournament.max_players_per_team, user?.id)
   }
 
-  if (isLoading || !tournament) return <UniversalLoader />
+  const handleRemovePlayer = async (memberId: string, playerName: string) => {
+    if (!confirm(`Are you sure you want to remove ${playerName} from the team?`)) return
+
+    const { error } = await supabase
+      .from('team_members')
+      .delete()
+      .eq('id', memberId)
+
+    if (error) return toast.error(error.message)
+
+    toast.success(`${playerName} has been removed from the roster.`)
+    await fetchTeamsAndRosters(tournament.max_players_per_team, user?.id)
+  }
+
+  const handleLeaveTeam = async (memberId: string) => {
+    if (!confirm(`Are you sure you want to leave ${myTeam.name}?`)) return
+
+    const { error } = await supabase
+      .from('team_members')
+      .delete()
+      .eq('id', memberId)
+
+    if (error) return toast.error(error.message)
+
+    toast.success(`You have left the team.`)
+    setMyTeam(null)
+    setActiveTab("overview")
+    await fetchTeamsAndRosters(tournament.max_players_per_team, user?.id)
+  }
+
+  // --- RENDERERS ---
+  if (isLoading) return <UniversalLoader />
+
+  if (!tournament) return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-6">
+      <XCircle className="h-16 w-16 text-destructive mb-4" />
+      <h2 className="text-2xl font-bold mb-2">Tournament Not Found</h2>
+      <p className="text-muted-foreground">The link you followed might be broken or the tournament has been removed.</p>
+    </div>
+  )
 
   return (
     <main className="min-h-screen bg-background pb-20">
@@ -332,10 +396,14 @@ const handleRequestToJoin = async (e: React.FormEvent) => {
                               <Users className="h-3 w-3" /> {team.playersCount} / {team.maxPlayers} Filled
                             </p>
                           </div>
-                          {team.playersCount < team.maxPlayers && team.captain_id !== user?.id && (
-<Button type="submit" disabled={isSubmittingJoin} className="w-full py-6 rounded-xl font-bold text-lg shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white">
-  {isSubmittingJoin ? "Sending Request..." : <><UserPlus className="h-5 w-5 mr-2" /> Send Join Request</>}
-</Button>
+                          {team.playersCount < team.maxPlayers && team.captain_id !== user?.id && !myTeam && (
+                            <Button 
+                              size="sm" 
+                              className="rounded-full"
+                              onClick={() => { setSelectedTeam(team); setIsJoinTeamOpen(true); }}
+                            >
+                              Join
+                            </Button>
                           )}
                         </div>
                       </CardContent>
@@ -345,77 +413,125 @@ const handleRequestToJoin = async (e: React.FormEvent) => {
               </div>
             )}
 
-            {/* 3. CAPTAIN'S DASHBOARD TAB */}
+            {/* 3. TEAM DASHBOARD TAB (CAPTAINS & PLAYERS) */}
             {activeTab === "manage" && myTeam && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
-                {/* Left Col: Roster & Invite */}
-                <div className="lg:col-span-7 space-y-8">
+                {/* Left Col: Roster & Invite (Expands to full width if not captain) */}
+                <div className={`space-y-8 ${myTeam.isCaptain ? 'lg:col-span-7' : 'lg:col-span-12'}`}>
                   <div>
-                    <h3 className="text-2xl font-bold flex items-center gap-2">{myTeam.name} <Badge className="bg-primary/20 text-primary hover:bg-primary/30">Registered</Badge></h3>
-                    <p className="text-muted-foreground">Manage your squad and invite players.</p>
+                    <h3 className="text-2xl font-bold flex items-center gap-2">
+                      {myTeam.name} <Badge className="bg-primary/20 text-primary hover:bg-primary/30">Registered</Badge>
+                    </h3>
+                    <p className="text-muted-foreground">
+                      {myTeam.isCaptain ? "Manage your squad and invite players." : "View your squad."}
+                    </p>
                   </div>
 
-                  {/* Invite Link */}
-                  <div className="p-1 rounded-2xl bg-gradient-to-r from-primary to-blue-600 shadow-sm">
-                    <div className="bg-card rounded-xl p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <div>
-                        <p className="font-bold mb-1 flex items-center gap-2"><Share2 className="h-4 w-4 text-primary" /> Invite Players</p>
-                        <p className="text-xs text-muted-foreground">Send this secret link to your friends so they can join directly.</p>
-                      </div>
-                      <div className="flex w-full sm:w-auto items-center gap-2 bg-secondary p-1.5 rounded-full border">
-                        <code className="text-xs px-3 font-medium truncate max-w-[150px] sm:max-w-xs text-muted-foreground">/join?code={myTeam.invite_code}</code>
-                        <Button size="sm" className="rounded-full h-8 shrink-0" onClick={handleCopyLink}><Copy className="h-3 w-3 mr-2" /> Copy</Button>
+                  {/* Invite Link - CAPTAINS ONLY */}
+                  {myTeam.isCaptain && (
+                    <div className="p-1 rounded-2xl bg-gradient-to-r from-primary to-blue-600 shadow-sm">
+                      <div className="bg-card rounded-xl p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div>
+                          <p className="font-bold mb-1 flex items-center gap-2"><Share2 className="h-4 w-4 text-primary" /> Invite Players</p>
+                          <p className="text-xs text-muted-foreground">Send this secret link to your friends so they can join directly.</p>
+                        </div>
+                        <div className="flex w-full sm:w-auto items-center gap-2 bg-secondary p-1.5 rounded-full border">
+                          <code className="text-xs px-3 font-medium truncate max-w-[150px] sm:max-w-xs text-muted-foreground">/join?code={myTeam.invite_code}</code>
+                          <Button size="sm" className="rounded-full h-8 shrink-0" onClick={handleCopyLink}><Copy className="h-3 w-3 mr-2" /> Copy</Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Roster */}
+                  {/* Roster - VISIBLE TO EVERYONE */}
                   <Card className="rounded-3xl border-border shadow-none bg-transparent">
-                    <CardHeader className="px-0"><CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5" /> Current Roster ({myTeam.roster.length}/{tournament.max_players_per_team})</CardTitle></CardHeader>
+                    <CardHeader className="px-0">
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Users className="h-5 w-5" /> Current Roster ({myTeam.roster.length}/{tournament.max_players_per_team})
+                      </CardTitle>
+                    </CardHeader>
                     <CardContent className="px-0 space-y-3">
                       {myTeam.roster.map((player: any) => (
-                        <div key={player.id} className="flex items-center justify-between p-3 bg-secondary/30 rounded-xl border border-border/50">
+                        <div key={player.id} className="flex items-center justify-between p-3 bg-secondary/30 rounded-xl border border-border/50 group">
                           <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">{player.users.name.charAt(0)}</div>
-                            <p className="font-semibold">{player.users.name}</p>
+                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
+                              {player.users.name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="font-semibold">{player.users.name}</p>
+                              <p className="text-xs text-muted-foreground capitalize">{player.role}</p>
+                            </div>
                           </div>
-                          <Badge variant={player.role === "captain" ? "default" : "secondary"}>{player.role}</Badge>
+                          
+                          <div className="flex items-center gap-2">
+                            {player.role === "captain" ? (
+                              <Badge variant="default">Captain</Badge>
+                            ) : (
+                              <>
+                                {/* Captain sees Remove for others */}
+                                {myTeam.isCaptain && (
+                                  <Button 
+                                    variant="destructive" 
+                                    size="sm" 
+                                    className="h-8 px-3"
+                                    onClick={() => handleRemovePlayer(player.id, player.users.name)}
+                                  >
+                                    Remove
+                                  </Button>
+                                )}
+                                
+                                {/* Player sees Leave for themselves */}
+                                {!myTeam.isCaptain && player.user_id === user?.id && (
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="h-8 px-3 text-destructive border-destructive/20 hover:bg-destructive/10"
+                                    onClick={() => handleLeaveTeam(player.id)}
+                                  >
+                                    Leave Team
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </CardContent>
                   </Card>
                 </div>
 
-                {/* Right Col: Pending Requests */}
-                <div className="lg:col-span-5">
-                  <Card className="rounded-3xl border-orange-500/20 bg-orange-500/5 h-full">
-                    <CardHeader>
-                      <CardTitle className="text-lg flex items-center gap-2 text-orange-600">
-                        <Clock className="h-5 w-5" /> Pending Requests
-                      </CardTitle>
-                      <p className="text-sm text-muted-foreground">Approve players who requested to join your team.</p>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {myTeam.pendingRequests.length === 0 ? (
-                        <p className="text-sm text-center text-muted-foreground py-8">No pending requests.</p>
-                      ) : (
-                        myTeam.pendingRequests.map((req: any) => (
-                          <div key={req.id} className="bg-card p-4 rounded-2xl border shadow-sm">
-                            <div className="flex justify-between items-start mb-3">
-                              <h5 className="font-bold">{req.users.name}</h5>
+                {/* Right Col: Pending Requests - CAPTAINS ONLY */}
+                {myTeam.isCaptain && (
+                  <div className="lg:col-span-5">
+                    <Card className="rounded-3xl border-orange-500/20 bg-orange-500/5 h-full">
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2 text-orange-600">
+                          <Clock className="h-5 w-5" /> Pending Requests
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground">Approve players who requested to join your team.</p>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {myTeam.pendingRequests.length === 0 ? (
+                          <p className="text-sm text-center text-muted-foreground py-8">No pending requests.</p>
+                        ) : (
+                          myTeam.pendingRequests.map((req: any) => (
+                            <div key={req.id} className="bg-card p-4 rounded-2xl border shadow-sm">
+                              <div className="flex justify-between items-start mb-3">
+                                <h5 className="font-bold">{req.users.name}</h5>
+                              </div>
+                              <p className="text-xs text-muted-foreground italic mb-4 border-l-2 pl-2 border-primary/50">"{req.join_message}"</p>
+                              <div className="flex gap-2">
+                                <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => handleProcessRequest(req.id, 'approve')}>Approve</Button>
+                                <Button size="sm" variant="outline" className="flex-1 text-destructive hover:bg-destructive/10 border-destructive/20" onClick={() => handleProcessRequest(req.id, 'reject')}>Decline</Button>
+                              </div>
                             </div>
-                            <p className="text-xs text-muted-foreground italic mb-4 border-l-2 pl-2 border-primary/50">"{req.join_message}"</p>
-                            <div className="flex gap-2">
-                              <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => handleProcessRequest(req.id, 'approve')}>Approve</Button>
-                              <Button size="sm" variant="outline" className="flex-1 text-destructive hover:bg-destructive/10 border-destructive/20" onClick={() => handleProcessRequest(req.id, 'reject')}>Decline</Button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
+                          ))
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
@@ -453,8 +569,8 @@ const handleRequestToJoin = async (e: React.FormEvent) => {
               <Label>Message to Captain</Label>
               <Input placeholder="e.g. I play mid-field, available both days." value={joinMessage} onChange={(e) => setJoinMessage(e.target.value)} required className="py-6 rounded-xl bg-secondary border-none" />
             </div>
-            <Button type="submit" className="w-full py-6 rounded-xl font-bold text-lg shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white">
-              <UserPlus className="h-5 w-5 mr-2" /> Send Join Request
+            <Button type="submit" disabled={isSubmittingJoin} className="w-full py-6 rounded-xl font-bold text-lg shadow-lg bg-indigo-600 hover:bg-indigo-700 text-white">
+              {isSubmittingJoin ? "Sending Request..." : <><UserPlus className="h-5 w-5 mr-2" /> Send Join Request</>}
             </Button>
           </form>
         </DialogContent>
